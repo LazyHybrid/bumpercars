@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bumper Cars P2P</title>
+  </head>
+  <body>
+    <div id="app">
+      <div class="hud">
+        <div class="hud__card">
+          <p class="eyebrow">P2P room</p>
+          <h1>Bumper Cars</h1>
+          <p id="room-label"></p>
+          <div class="hud__actions">
+            <button id="copy-link" type="button">Copy join link</button>
+            <button id="new-room" type="button">New room</button>
+          </div>
+          <p class="hint">Use WASD to drive. Open the copied link in another browser to join the same arena.</p>
+        </div>
+        <div class="hud__card hud__card--small">
+          <p class="eyebrow">Session</p>
+          <p id="peer-count">1 player connected</p>
+          <p id="status">Connecting to room...</p>
+        </div>
+      </div>
+      <canvas id="scene"></canvas>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+  </html>

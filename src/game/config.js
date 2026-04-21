@@ -1,0 +1,31 @@
+import { parseListEnv, sanitizeOrigin } from './utils';
+
+export const ROOM_APP_ID = 'bumpercars-p2p-demo';
+export const PUBLIC_ORIGIN = sanitizeOrigin(import.meta.env.VITE_PUBLIC_ORIGIN);
+export const TURN_URLS = parseListEnv(import.meta.env.VITE_TURN_URLS);
+export const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME?.trim();
+export const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL?.trim();
+export const RELAY_URLS = parseListEnv(import.meta.env.VITE_NOSTR_RELAYS);
+
+export const ARENA_RADIUS = 32;
+export const CAR_RADIUS = 1.55;
+export const CAR_COLLISION_DISTANCE_MULTIPLIER = 2.28;
+export const WALL_BOUNCE = 0.72;
+export const PLAYER_MASS = 1;
+export const ICE_COLLISION_RESTITUTION = 0.94;
+export const COLLISION_POSITION_SLOP = 0.02;
+export const COLLISION_POSITION_PERCENT = 0.85;
+export const BUMPER_ZONE_RESTITUTION = 0.78;
+export const BUMPER_ZONE_TRANSFER = 2.4;
+export const IMPACT_VELOCITY_DECAY = 2.2;
+export const BASE_SPEED_SCALE = 1;
+export const BOOSTED_SPEED_SCALE = 1.5;
+export const SPEED_RAMP_TIME_SECONDS = 1;
+export const REMOTE_TIMEOUT_MS = 5000;
+export const SIMULATION_STEP = 1 / 60;
+export const SNAPSHOT_SEND_INTERVAL_MS = 16;
+export const INPUT_SEND_INTERVAL_MS = 16;
+export const LOCAL_RECONCILE_RATE = 11;
+export const REMOTE_INTERPOLATION_RATE = 12;
+export const SNAPSHOT_POSITION_SNAP_DISTANCE = 2.4;
+export const SNAPSHOT_VELOCITY_SNAP_DELTA = 12;
