@@ -13,12 +13,20 @@ Small browser prototype for a third-person bumper car arena built with JavaScrip
 
 ```bash
 npm install
-npm run dev -- --host
+npm start
 ```
 
 Then open the local URL in your browser. The game will automatically generate a room ID in the URL if one is missing.
 
 To invite another player, copy the full URL and open it on another device or browser.
+
+## Map editor
+
+```bash
+npm run map
+```
+
+This starts the built-in map maker without needing `--` argument forwarding.
 
 ## Make the link work off-network
 

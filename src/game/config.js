@@ -1,16 +1,17 @@
 import { parseListEnv, sanitizeOrigin } from './utils';
 
 export const ROOM_APP_ID = 'bumpercars-p2p-demo';
+export const MAX_PLAYERS = 4;
 export const PUBLIC_ORIGIN = sanitizeOrigin(import.meta.env.VITE_PUBLIC_ORIGIN);
 export const TURN_URLS = parseListEnv(import.meta.env.VITE_TURN_URLS);
 export const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME?.trim();
 export const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL?.trim();
 export const RELAY_URLS = parseListEnv(import.meta.env.VITE_NOSTR_RELAYS);
 
-export const ARENA_RADIUS = 32;
+export const ARENA_RADIUS = 40;
 export const CAR_RADIUS = 1.55;
 export const CAR_COLLISION_DISTANCE_MULTIPLIER = 2.28;
-export const WALL_BOUNCE = 0.72;
+export const WALL_BOUNCE = 1.08;
 export const PLAYER_MASS = 1;
 export const ICE_COLLISION_RESTITUTION = 0.94;
 export const COLLISION_POSITION_SLOP = 0.02;

@@ -4,6 +4,7 @@ import { joinRoom, selfId } from '@trystero-p2p/nostr';
 import {
   INPUT_SEND_INTERVAL_MS,
   LOCAL_RECONCILE_RATE,
+  MAX_PLAYERS,
   PUBLIC_ORIGIN,
   RELAY_URLS,
   REMOTE_INTERPOLATION_RATE,
@@ -18,19 +19,29 @@ import {
   TURN_USERNAME,
 } from './game/config';
 import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
+import { getActiveMap, getMapSpawn, mapCellToWorld } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
-import { resolveArenaCollision, resolvePlayerCollision, simulateMovement } from './game/physics';
+import { createMapEditor } from './game/map-editor';
+import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 
-const canvas = document.querySelector('#scene');
+const appMode = import.meta.env.VITE_APP_MODE ?? 'play';
+
+const sceneRoot = document.querySelector('#scene');
+const eyebrowLabel = document.querySelector('.eyebrow');
+const titleLabel = document.querySelector('h1');
 const roomLabel = document.querySelector('#room-label');
 const peerCountLabel = document.querySelector('#peer-count');
 const statusLabel = document.querySelector('#status');
 const copyLinkButton = document.querySelector('#copy-link');
 const newRoomButton = document.querySelector('#new-room');
+const hintLabel = document.querySelector('.hint');
+const actions = document.querySelector('.hud__actions');
 
-const { renderer, scene, camera, clock } = createWorld(canvas);
+const { renderer, scene, camera, clock } = createWorld(sceneRoot);
+const activeMap = getActiveMap();
+const spawnPoint = mapCellToWorld(getMapSpawn(activeMap, 0).x, getMapSpawn(activeMap, 0).y);
 
 const keys = {
   forward: false,
@@ -54,15 +65,47 @@ let simulationAccumulator = 0;
 let snapshotAccumulator = 0;
 let inputAccumulator = 0;
 let lastSentInputSignature = '';
+const EDIT_CAMERA_SPEED = 30;
 
-const localPlayer = createPlayer(selfId, true, colorFromId(selfId), new THREE.Vector3(0, 0, 0));
-scene.add(localPlayer.group);
+const localPlayer = createPlayer(selfId, true, colorFromId(selfId), new THREE.Vector3(spawnPoint.x, 0, spawnPoint.y));
 
-setupInput(keys);
-setupRoom();
-setupUi();
-window.addEventListener('resize', handleResize);
-requestAnimationFrame(loop);
+if (appMode === 'map') {
+  startMapEditor();
+} else {
+  scene.add(localPlayer.group);
+  setupInput(keys);
+  setupRoom();
+  setupUi();
+  window.addEventListener('resize', handleResize);
+  requestAnimationFrame(loop);
+}
+
+function startMapEditor() {
+  const ui = {
+    eyebrow: eyebrowLabel,
+    title: titleLabel,
+    roomLabel,
+    peerCountLabel,
+    statusLabel,
+    copyLinkButton,
+    newRoomButton,
+    hintLabel,
+    actions,
+  };
+
+  createMapEditor(sceneRoot, scene, ui);
+  setupInput(keys);
+  camera.position.set(0, 0, 0);
+  window.addEventListener('resize', handleResize);
+  requestAnimationFrame(mapEditorLoop);
+}
+
+function mapEditorLoop() {
+  const delta = Math.min(clock.getDelta(), 0.05);
+  updateEditorCamera(delta);
+  renderer.render(scene, camera);
+  requestAnimationFrame(mapEditorLoop);
+}
 
 function setupUi() {
   copyLinkButton.addEventListener('click', async () => {
@@ -96,13 +139,18 @@ function setupRoom() {
 
   room.onPeerJoin((peerId) => {
     participantIds.add(peerId);
-    ensureRemotePlayer(remotePlayers, scene, peerId);
+    syncActiveRoster();
+
+    if (isPeerActive(peerId)) {
+      ensureRemotePlayer(remotePlayers, scene, peerId, getSpawnVector(peerId));
+    }
+
     refreshHostRole();
     updatePeerCount();
 
-    if (isHost()) {
+    if (isHost() && isPeerActive(peerId)) {
       sendSnapshotPacket(peerId);
-    } else {
+    } else if (!isHost() && isPeerActive(selfId)) {
       sendInputPacket(true);
     }
   });
@@ -114,6 +162,7 @@ function setupRoom() {
       scene.remove(player.group);
       remotePlayers.delete(peerId);
     }
+    syncActiveRoster();
     refreshHostRole();
     updatePeerCount();
 
@@ -123,11 +172,11 @@ function setupRoom() {
   });
 
   receiveInput((payload, peerId) => {
-    if (!isHost()) {
+    if (!isHost() || !isPeerActive(peerId)) {
       return;
     }
 
-    const player = ensureRemotePlayer(remotePlayers, scene, peerId);
+    const player = ensureRemotePlayer(remotePlayers, scene, peerId, getSpawnVector(peerId));
     player.input = normalizeInput(payload);
     player.lastSeenAt = performance.now();
   });
@@ -236,12 +285,12 @@ function buildTurnServer() {
 }
 
 function updatePeerCount() {
-  const totalPlayers = participantIds.size;
-  peerCountLabel.textContent = `${totalPlayers} player${totalPlayers === 1 ? '' : 's'} connected`;
+  const totalPlayers = getActiveParticipantIds().length;
+  peerCountLabel.textContent = `${totalPlayers}/${MAX_PLAYERS} player${totalPlayers === 1 ? '' : 's'} active`;
 }
 
 function sendInputPacket(force = false) {
-  if (isHost() || !sendInput || hostId === selfId) {
+  if (isHost() || !sendInput || hostId === selfId || !isPeerActive(selfId)) {
     return;
   }
 
@@ -319,6 +368,7 @@ function loop() {
 function updatePredictedLocalPlayer(delta) {
   simulateMovement(localPlayer, readCurrentInputState(keys), delta);
   resolveArenaCollision(localPlayer);
+  resolveMapWallCollisions(localPlayer);
   reconcileLocalPlayer(delta);
   syncPlayerTransform(localPlayer);
 }
@@ -356,24 +406,37 @@ function reconcileLocalPlayer(delta) {
 }
 
 function updateCamera(delta) {
-  const forward = new THREE.Vector3(Math.sin(localPlayer.heading), 0, Math.cos(localPlayer.heading));
-  const desiredPosition = new THREE.Vector3(
-    localPlayer.position.x,
-    7.2,
-    localPlayer.position.y
-  )
-    .addScaledVector(forward, -8.6)
-    .add(new THREE.Vector3(0, 2.1, 0));
+  const desiredPosition = new THREE.Vector3(localPlayer.position.x, 0, localPlayer.position.y);
+  camera.position.lerp(desiredPosition, Math.min(1, delta * 5.5));
+}
 
-  camera.position.lerp(desiredPosition, Math.min(1, delta * 4.8));
+function updateEditorCamera(delta) {
+  const cameraStep = EDIT_CAMERA_SPEED * delta;
 
-  const lookTarget = new THREE.Vector3(localPlayer.position.x, 1.2, localPlayer.position.y)
-    .addScaledVector(forward, 3.2);
-  camera.lookAt(lookTarget);
+  if (keys.forward) {
+    camera.position.z -= cameraStep;
+  }
+
+  if (keys.backward) {
+    camera.position.z += cameraStep;
+  }
+
+  if (keys.left) {
+    camera.position.x -= cameraStep;
+  }
+
+  if (keys.right) {
+    camera.position.x += cameraStep;
+  }
 }
 
 function getAllPlayers() {
-  return [localPlayer, ...remotePlayers.values()];
+  const players = [];
+  if (isPeerActive(selfId)) {
+    players.push(localPlayer);
+  }
+
+  return [...players, ...remotePlayers.values()];
 }
 
 function simulateAuthoritativeStep(delta) {
@@ -383,6 +446,7 @@ function simulateAuthoritativeStep(delta) {
     const input = player.isLocal ? readCurrentInputState(keys) : player.input;
     simulateMovement(player, input, delta);
     resolveArenaCollision(player);
+    resolveMapWallCollisions(player);
   }
 
   for (let index = 0; index < players.length; index += 1) {
@@ -443,7 +507,9 @@ function refreshHostRole(forcedHostId) {
   const nextHostId = forcedHostId ?? [...participantIds].sort()[0] ?? selfId;
   hostId = nextHostId;
 
-  if (isHost()) {
+  if (!isPeerActive(selfId)) {
+    statusLabel.textContent = `Room full. Only ${MAX_PLAYERS} players can be active.`;
+  } else if (isHost()) {
     statusLabel.textContent = 'You are the authoritative host.';
   } else {
     statusLabel.textContent = `Authoritative host: ${shortId(hostId)}`;
@@ -452,4 +518,38 @@ function refreshHostRole(forcedHostId) {
 
 function isHost() {
   return hostId === selfId;
+}
+
+function getActiveParticipantIds() {
+  return [...participantIds].slice(0, MAX_PLAYERS);
+}
+
+function isPeerActive(peerId) {
+  return getActiveParticipantIds().includes(peerId);
+}
+
+function getSpawnVector(peerId) {
+  const spawnIndex = Math.max(0, getActiveParticipantIds().indexOf(peerId));
+  const spawnCell = getMapSpawn(activeMap, spawnIndex);
+  const worldSpawn = mapCellToWorld(spawnCell.x, spawnCell.y);
+  return new THREE.Vector3(worldSpawn.x, 0, worldSpawn.y);
+}
+
+function syncActiveRoster() {
+  for (const [peerId, player] of remotePlayers.entries()) {
+    if (!isPeerActive(peerId)) {
+      scene.remove(player.group);
+      remotePlayers.delete(peerId);
+    }
+  }
+
+  if (!isPeerActive(selfId) && localPlayer.group.parentNode) {
+    scene.remove(localPlayer.group);
+  } else if (isPeerActive(selfId) && !localPlayer.group.parentNode) {
+    const spawnVector = getSpawnVector(selfId);
+    localPlayer.position.set(spawnVector.x, spawnVector.z);
+    localPlayer.previousPosition.copy(localPlayer.position);
+    localPlayer.targetPosition.copy(localPlayer.position);
+    scene.add(localPlayer.group);
+  }
 }

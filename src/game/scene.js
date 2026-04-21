@@ -1,60 +1,103 @@
 import * as THREE from 'three';
-import { ARENA_RADIUS } from './config';
+import { getActiveMap, mapWallToWorldRect, WORLD_SCALE, MAP_CELL_SIZE, MAP_WORLD_SIZE, MAP_ARENA_ZONE_RADIUS, MAP_OUTER_ZONE_RADIUS, MAP_KILLZONE_FIELD_SIZE, MAP_INNER_ZONE_RADIUS } from './map-data';
 
-export function createWorld(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+export function createWorld(root) {
+  root.replaceChildren();
+  root.classList.add('scene-root');
+  const activeMap = getActiveMap();
+  root.dataset.arenaVariant = activeMap.arenaVariant;
+
+  const world = document.createElement('div');
+  world.className = 'scene-world';
+  root.append(world);
+
+  const outerZoneRadius = activeMap.arenaVariant === 'killzone'
+    ? MAP_ARENA_ZONE_RADIUS
+    : MAP_OUTER_ZONE_RADIUS;
+
+  const outerZone = document.createElement('div');
+  outerZone.className = 'arena-zone arena-zone--outer';
+  outerZone.style.width = `${outerZoneRadius * 2 * WORLD_SCALE}px`;
+  outerZone.style.height = `${outerZoneRadius * 2 * WORLD_SCALE}px`;
+  world.append(outerZone);
+
+  const innerZone = document.createElement('div');
+  innerZone.className = 'arena-zone arena-zone--inner';
+  innerZone.style.width = `${MAP_INNER_ZONE_RADIUS * 2 * WORLD_SCALE}px`;
+  innerZone.style.height = `${MAP_INNER_ZONE_RADIUS * 2 * WORLD_SCALE}px`;
+  world.append(innerZone);
+
+  const arenaGrid = document.createElement('div');
+  arenaGrid.className = 'arena-grid';
+  arenaGrid.style.setProperty('--arena-grid-size', `${MAP_WORLD_SIZE * WORLD_SCALE}px`);
+  arenaGrid.style.setProperty('--arena-cell-size', `${MAP_CELL_SIZE * WORLD_SCALE}px`);
+  world.append(arenaGrid);
+
+  for (const floor of activeMap.floors) {
+    const rect = mapWallToWorldRect(floor);
+    const floorElement = document.createElement('div');
+    floorElement.className = 'arena-floor-tile';
+    floorElement.style.width = `${Math.ceil(MAP_CELL_SIZE * WORLD_SCALE) + 1}px`;
+    floorElement.style.height = `${Math.ceil(MAP_CELL_SIZE * WORLD_SCALE) + 1}px`;
+    floorElement.style.transform = `translate3d(${rect.minX * WORLD_SCALE}px, ${rect.minY * WORLD_SCALE}px, 0)`;
+    world.append(floorElement);
+  }
+
+  for (const wall of activeMap.walls) {
+    const rect = mapWallToWorldRect(wall);
+    const wallElement = document.createElement('div');
+    wallElement.className = 'arena-wall';
+    wallElement.style.width = `${(rect.maxX - rect.minX) * WORLD_SCALE}px`;
+    wallElement.style.height = `${(rect.maxY - rect.minY) * WORLD_SCALE}px`;
+    wallElement.style.transform = `translate3d(${rect.minX * WORLD_SCALE}px, ${rect.minY * WORLD_SCALE}px, 0)`;
+    world.append(wallElement);
+  }
+
+  const scene = {
+    add(child) {
+      world.append(child);
+    },
+    remove(child) {
+      if (child?.parentNode === world) {
+        world.removeChild(child);
+      }
+    },
+  };
+
+  const camera = {
+    position: new THREE.Vector3(),
+    aspect: window.innerWidth / window.innerHeight,
+    updateProjectionMatrix() {},
+    lookAt() {},
+  };
+
+  const clock = createClock();
+  const renderer = {
+    setSize(width, height) {
+      root.style.setProperty('--viewport-width', `${width}px`);
+      root.style.setProperty('--viewport-height', `${height}px`);
+    },
+    render() {
+      const cameraX = camera.position.x * WORLD_SCALE;
+      const cameraY = camera.position.z * WORLD_SCALE;
+      world.style.transform = `translate3d(${-cameraX}px, ${-cameraY}px, 0)`;
+    },
+  };
+
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#8ad6ff');
-  scene.fog = new THREE.Fog('#8ad6ff', 45, 110);
+  return { renderer, scene, camera, clock, map: activeMap };
+}
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
-  camera.position.set(0, 7, 12);
+function createClock() {
+  let previousTime = performance.now();
 
-  const clock = new THREE.Clock();
-
-  const hemisphereLight = new THREE.HemisphereLight('#ffffff', '#6c8b51', 1.6);
-  scene.add(hemisphereLight);
-
-  const sunLight = new THREE.DirectionalLight('#fff5df', 2.3);
-  sunLight.position.set(20, 25, 12);
-  sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
-  sunLight.shadow.camera.left = -50;
-  sunLight.shadow.camera.right = 50;
-  sunLight.shadow.camera.top = 50;
-  sunLight.shadow.camera.bottom = -50;
-  scene.add(sunLight);
-
-  const arenaFloor = new THREE.Mesh(
-    new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS, 1.4, 64),
-    new THREE.MeshStandardMaterial({ color: '#e5f6ff', roughness: 0.24, metalness: 0.08 })
-  );
-  arenaFloor.receiveShadow = true;
-  arenaFloor.position.y = -0.7;
-  scene.add(arenaFloor);
-
-  const arenaRing = new THREE.Mesh(
-    new THREE.TorusGeometry(ARENA_RADIUS - 0.25, 1.6, 22, 120),
-    new THREE.MeshStandardMaterial({ color: '#ff8155', roughness: 0.5, metalness: 0.15 })
-  );
-  arenaRing.rotation.x = Math.PI / 2;
-  arenaRing.position.y = 0.45;
-  scene.add(arenaRing);
-
-  const grid = new THREE.GridHelper(ARENA_RADIUS * 2.1, 28, '#4b6f88', '#8ebfd3');
-  grid.position.y = 0.02;
-  scene.add(grid);
-
-  const skyAccent = new THREE.Mesh(
-    new THREE.SphereGeometry(140, 32, 32),
-    new THREE.MeshBasicMaterial({ color: '#b8efff', side: THREE.BackSide })
-  );
-  scene.add(skyAccent);
-
-  return { renderer, scene, camera, clock };
+  return {
+    getDelta() {
+      const now = performance.now();
+      const delta = (now - previousTime) / 1000;
+      previousTime = now;
+      return delta;
+    },
+  };
 }

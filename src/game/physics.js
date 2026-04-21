@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import {
-  ARENA_RADIUS,
   CAR_COLLISION_DISTANCE_MULTIPLIER,
   BUMPER_ZONE_RESTITUTION,
   BUMPER_ZONE_TRANSFER,
@@ -14,8 +13,12 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
+import { getActiveMap, mapWallToWorldRect } from './map-data';
 
 const inversePlayerMass = 1 / PLAYER_MASS;
+const wallContactThreshold = 0.18;
+const wallTouchPush = 5.5;
+const wallPenetrationPush = 18;
 
 export function simulateMovement(player, input, delta) {
   const traction = 0.82;
@@ -34,10 +37,10 @@ export function simulateMovement(player, input, delta) {
   const strafeInput = (input.strafeRight ? 1 : 0) - (input.strafeLeft ? 1 : 0);
   const steerStrength = THREE.MathUtils.lerp(1.7, 2.8, Math.min(speed / 14, 1));
 
-  player.heading += steerInput * steerStrength * delta * (speed > 0.2 ? 1 : 0.45);
+  player.heading -= steerInput * steerStrength * delta * (speed > 0.2 ? 1 : 0.45);
 
-  const forward = new THREE.Vector2(Math.sin(player.heading), Math.cos(player.heading));
-  const right = new THREE.Vector2(forward.y, -forward.x);
+  const forward = new THREE.Vector2(Math.sin(player.heading), -Math.cos(player.heading));
+  const right = new THREE.Vector2(-forward.y, forward.x);
   player.velocity.addScaledVector(forward, acceleration * delta);
   player.velocity.addScaledVector(right, strafeInput * 22 * speedScale * delta);
 
@@ -61,42 +64,15 @@ export function simulateMovement(player, input, delta) {
     .multiplyScalar(1 / safeDelta);
 }
 
-export function resolveArenaCollision(player) {
-  const limit = ARENA_RADIUS - CAR_RADIUS;
-  const distance = player.position.length();
-  const wallContactThreshold = 0.18;
-  const wallTouchPush = 5.5;
-  const wallPenetrationPush = 18;
+export function resolveArenaCollision() {
+}
 
-  if (distance < limit - wallContactThreshold) {
-    return;
+export function resolveMapWallCollisions(player) {
+  const activeMap = getActiveMap();
+
+  for (const wall of activeMap.walls) {
+    resolveStaticRectCollision(player, mapWallToWorldRect(wall));
   }
-
-  const normal = distance > 0.0001
-    ? player.position.clone().normalize()
-    : new THREE.Vector2(0, 1);
-  const clampedDistance = Math.min(distance, limit);
-  const penetration = Math.max(0, distance - limit);
-  const touchAmount = THREE.MathUtils.clamp((distance - (limit - wallContactThreshold)) / wallContactThreshold, 0, 1);
-
-  player.position.copy(normal.clone().multiplyScalar(clampedDistance));
-  const driveVelocityAlongWall = player.velocity.dot(normal);
-  const impactVelocityAlongWall = player.impactVelocity.dot(normal);
-  const totalVelocityAlongWall = driveVelocityAlongWall + impactVelocityAlongWall;
-
-  if (driveVelocityAlongWall > 0) {
-    player.velocity.addScaledVector(normal, -driveVelocityAlongWall);
-  }
-
-  if (impactVelocityAlongWall > 0) {
-    player.impactVelocity.addScaledVector(normal, -impactVelocityAlongWall);
-  }
-
-  const inwardPush = touchAmount * wallTouchPush
-    + penetration * wallPenetrationPush
-    + Math.max(0, totalVelocityAlongWall) * WALL_BOUNCE;
-
-  player.impactVelocity.addScaledVector(normal, -inwardPush);
 }
 
 export function resolvePlayerCollision(playerA, playerB) {
@@ -157,7 +133,7 @@ function getCollisionFallbackNormal(playerA, playerB) {
 }
 
 function getForwardVector(heading) {
-  return new THREE.Vector2(Math.sin(heading), Math.cos(heading)).normalize();
+  return new THREE.Vector2(Math.sin(heading), -Math.cos(heading)).normalize();
 }
 
 function getCollisionMotion(player) {
@@ -166,4 +142,70 @@ function getCollisionMotion(player) {
   }
 
   return player.velocity.clone().add(player.impactVelocity);
+}
+
+function resolveStaticRectCollision(player, rect) {
+  const expandedMinX = rect.minX - CAR_RADIUS;
+  const expandedMaxX = rect.maxX + CAR_RADIUS;
+  const expandedMinY = rect.minY - CAR_RADIUS;
+  const expandedMaxY = rect.maxY + CAR_RADIUS;
+
+  if (
+    player.position.x < expandedMinX
+    || player.position.x > expandedMaxX
+    || player.position.y < expandedMinY
+    || player.position.y > expandedMaxY
+  ) {
+    return;
+  }
+
+  const nearestX = THREE.MathUtils.clamp(player.position.x, rect.minX, rect.maxX);
+  const nearestY = THREE.MathUtils.clamp(player.position.y, rect.minY, rect.maxY);
+  const delta = player.position.clone().sub(new THREE.Vector2(nearestX, nearestY));
+  let normal = delta;
+  let distance = delta.length();
+
+  if (distance <= 0.0001) {
+    const distancesToFaces = [
+      { value: Math.abs(player.position.x - rect.minX), normal: new THREE.Vector2(-1, 0) },
+      { value: Math.abs(rect.maxX - player.position.x), normal: new THREE.Vector2(1, 0) },
+      { value: Math.abs(player.position.y - rect.minY), normal: new THREE.Vector2(0, -1) },
+      { value: Math.abs(rect.maxY - player.position.y), normal: new THREE.Vector2(0, 1) },
+    ];
+    distancesToFaces.sort((a, b) => a.value - b.value);
+    normal = distancesToFaces[0].normal;
+    distance = 0;
+  } else {
+    normal = normal.normalize();
+  }
+
+  const penetration = CAR_RADIUS - distance;
+  if (penetration <= -wallContactThreshold) {
+    return;
+  }
+
+  const touchAmount = THREE.MathUtils.clamp((penetration + wallContactThreshold) / wallContactThreshold, 0, 1);
+  const clampedPenetration = Math.max(0, penetration);
+
+  if (clampedPenetration > 0) {
+    player.position.addScaledVector(normal, clampedPenetration);
+  }
+
+  const driveVelocityAlongWall = player.velocity.dot(normal);
+  const impactVelocityAlongWall = player.impactVelocity.dot(normal);
+  const totalVelocityAlongWall = driveVelocityAlongWall + impactVelocityAlongWall;
+
+  if (driveVelocityAlongWall < 0) {
+    player.velocity.addScaledVector(normal, -driveVelocityAlongWall);
+  }
+
+  if (impactVelocityAlongWall < 0) {
+    player.impactVelocity.addScaledVector(normal, -impactVelocityAlongWall);
+  }
+
+  const inwardPush = touchAmount * wallTouchPush
+    + clampedPenetration * wallPenetrationPush
+    + Math.max(0, -totalVelocityAlongWall) * WALL_BOUNCE;
+
+  player.impactVelocity.addScaledVector(normal, inwardPush);
 }
