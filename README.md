@@ -52,6 +52,36 @@ VITE_TURN_CREDENTIAL=replace-me
 
 Without a TURN server, many cross-network connections will still work, but some players behind strict routers or carrier-grade NAT will fail to connect.
 
+## Gameplay Features 
+
+- Host-synchronized match timer: The timer in the top right is always in sync for all players, controlled by the host.
+- New Match button: Instantly resets the match (timer, scores, life, positions, and momentum) for all players in the room.
+- Player elimination: When a player's HP reaches zero, their car despawns and they get a free camera until the next match or respawn.
+- Score and HP bar: Score is shown bottom right, HP bar is at the top center.
+- Pause menu: Press Escape to pause, resume, or see session info.
+- Map editor: Toggle with the Edit Map button to create or modify arenas.
+
+## How the Timer Works
+
+- The timer in the top right is always synchronized across all players.
+- Only the host advances the timer; all other players receive the timer value from the host.
+- When a new match is started, the timer resets for everyone.
+
+## Resetting the Match
+
+- Click the New Match button (above the timer) to reset the game for all players in the current room.
+- This will reset all scores, HP, positions, and momentum, and respawn all cars.
+
+## Controls
+
+- WASD: Drive
+- Mouse: Steer camera
+- Escape: Pause menu
+- Edit Map: Enter map editor
+- New Match: Reset the match for all players
+
+---
+
 ## Notes on P2P hosting
 
 This project uses Trystero's Nostr strategy for signaling and WebRTC for the actual player-to-player connection.

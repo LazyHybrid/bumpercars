@@ -1,3 +1,6 @@
+// =========================
+// Imports
+// =========================
 import './style.css';
 import { joinRoom, selfId } from '@trystero-p2p/nostr';
 import {
@@ -18,18 +21,20 @@ import {
   TURN_USERNAME,
 } from './game/config';
 import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
+import { MAP_WORLD_SIZE, MAP_CELL_SIZE } from './game/map-data';
 import { getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
+import { LifeSystem, isOnFloorOrWall } from './game/life.js';
 import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 
-const appMode = import.meta.env.VITE_APP_MODE ?? 'play';
-
-
-const sceneRoot = document.querySelector('#scene');
+// =========================
+// DOM/UI References
+// =========================
+// ...existing code...
 const playHud = document.getElementById('play-hud');
 const editorHud = document.getElementById('editor-hud');
 const eyebrowLabel = playHud.querySelector('.eyebrow');
@@ -43,6 +48,97 @@ const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
+
+// Pause menu and timer logic
+let isPaused = false;
+let matchTime = 0;
+let lastUnpausedTime = performance.now();
+const pauseMenu = document.getElementById('pause-menu');
+const resumeBtn = document.getElementById('resume-btn');
+const matchTimerDisplay = document.getElementById('match-timer');
+const globalMatchTimer = document.getElementById('global-match-timer');
+const newMatchBtn = document.getElementById('new-match-btn');
+
+if (newMatchBtn) {
+  newMatchBtn.addEventListener('click', () => {
+    resetMatch();
+  });
+}
+
+function resetMatch() {
+  // Reset life, score, timer, and respawn all players at spawn
+  matchTime = 0;
+  lastUnpausedTime = performance.now();
+  // Local player
+  playerLives[selfId].reset(INITIAL_LIFE);
+  localPlayer.score = 0;
+  localPlayer.velocity.set(0, 0);
+  localPlayer.impactVelocity.set(0, 0);
+  const spawn = getSpawnPoint(selfId);
+  localPlayer.position.set(spawn.x, spawn.y);
+  localPlayer.previousPosition.copy(localPlayer.position);
+  localPlayer.targetPosition.copy(localPlayer.position);
+  viewPosition.copy(localPlayer.position);
+  world.setViewPosition(viewPosition.x, viewPosition.y);
+  if (!localPlayer.group.parentNode) world.add(localPlayer.group);
+  // Remote players
+  for (const [peerId, player] of remotePlayers.entries()) {
+    if (playerLives[peerId]) playerLives[peerId].reset(INITIAL_LIFE);
+    player.score = 0;
+    player.velocity.set(0, 0);
+    player.impactVelocity.set(0, 0);
+    const spawn = getSpawnPoint(peerId);
+    player.position.set(spawn.x, spawn.y);
+    player.previousPosition.copy(player.position);
+    player.targetPosition.copy(player.position);
+    if (!player.group.parentNode) world.add(player.group);
+  }
+  updateHpBar();
+  updateScoreDisplay();
+  updateMatchTimerDisplay();
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function updateMatchTimerDisplay() {
+  matchTimerDisplay.textContent = formatTime(matchTime);
+  if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
+}
+
+function setPaused(paused) {
+  isPaused = paused;
+  pauseMenu.style.display = paused ? 'flex' : 'none';
+  if (!paused) lastUnpausedTime = performance.now();
+}
+
+resumeBtn.addEventListener('click', () => setPaused(false));
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') setPaused(!isPaused);
+});
+
+
+
+const sceneRoot = document.querySelector('#scene');
+// ...existing code...
+
+// Create HP bar as a direct child of body for maximum overlay visibility
+let hpBarContainer = document.getElementById('hp-bar-container');
+let hpBarFill = null;
+if (!hpBarContainer) {
+  hpBarContainer = document.createElement('div');
+  hpBarContainer.id = 'hp-bar-container';
+  hpBarContainer.innerHTML = `
+    <div id="hp-bar-bg">
+      <div id="hp-bar-fill"></div>
+    </div>
+  `;
+  document.body.appendChild(hpBarContainer);
+}
+hpBarFill = hpBarContainer.querySelector('#hp-bar-fill');
 
 const { world, clock } = createWorld(sceneRoot);
 const initialMap = getActiveMap();
@@ -58,6 +154,13 @@ const keys = {
 };
 
 const remotePlayers = new Map();
+
+// Life system for all players
+const playerLives = {};
+const LIFE_TICK_INTERVAL = 0.5; // seconds
+const LIFE_TICK_DAMAGE = 0.5;
+const INITIAL_LIFE = 15;
+let lifeTickAccumulator = 0;
 const participantIds = new Set([selfId]);
 let room = null;
 let sendInput = null;
@@ -75,7 +178,39 @@ let lastSentInputSignature = '';
 const EDIT_CAMERA_SPEED = 30;
 const viewPosition = new Vec2(spawnPoint.x, spawnPoint.y);
 
+
 const localPlayer = createPlayer(selfId, true, colorFromId(selfId), spawnPoint);
+playerLives[selfId] = new LifeSystem(INITIAL_LIFE);
+
+// Score display element (must be after localPlayer is defined)
+let scoreDisplay = document.getElementById('score-display');
+if (!scoreDisplay) {
+  scoreDisplay = document.createElement('div');
+  scoreDisplay.id = 'score-display';
+  document.body.appendChild(scoreDisplay);
+}
+if (localPlayer.score === undefined) localPlayer.score = 0;
+function updateScoreDisplay() {
+  scoreDisplay.textContent = `Score: ${localPlayer.score ?? 0}`;
+}
+
+function ensureRemotePlayerWithLife(remotePlayers, world, peerId, spawnPosition) {
+  let player = remotePlayers.get(peerId);
+  if (!player) {
+    player = createPlayer(peerId, false, colorFromId(peerId), spawnPosition);
+    remotePlayers.set(peerId, player);
+    if (!playerLives[peerId]) playerLives[peerId] = new LifeSystem(INITIAL_LIFE);
+  }
+  // Always re-add car if alive and not present
+  if (playerLives[peerId]?.isAlive() && !player.group.parentNode) {
+    world.add(player.group);
+  }
+  // Always remove car if not alive and present
+  if (!playerLives[peerId]?.isAlive() && player.group.parentNode) {
+    world.remove(player.group);
+  }
+  return player;
+}
 
 
 let isEditMode = false;
@@ -242,7 +377,7 @@ function setupRoom() {
     syncActiveRoster();
 
     if (isPeerActive(peerId)) {
-      ensureRemotePlayer(remotePlayers, world, peerId, getSpawnPoint(peerId));
+      ensureRemotePlayerWithLife(remotePlayers, world, peerId, getSpawnPoint(peerId));
     }
 
     refreshHostRole();
@@ -277,7 +412,7 @@ function setupRoom() {
       return;
     }
 
-    const player = ensureRemotePlayer(remotePlayers, world, peerId, getSpawnPoint(peerId));
+    const player = ensureRemotePlayerWithLife(remotePlayers, world, peerId, getSpawnPoint(peerId));
     player.input = normalizeInput(payload);
     player.lastSeenAt = performance.now();
   });
@@ -289,6 +424,12 @@ function setupRoom() {
 
     participantIds.add(peerId);
     refreshHostRole(payload.hostId ?? peerId);
+
+    // All clients except host sync matchTime from host
+    if (typeof payload.matchTime === 'number' && !isHost()) {
+      matchTime = payload.matchTime;
+      updateMatchTimerDisplay();
+    }
 
     if (peerId !== hostId) {
       return;
@@ -429,6 +570,7 @@ function sendSnapshotPacket(targetPeers) {
 
   sendSnapshot({
     hostId: selfId,
+    matchTime,
     players: getAllPlayers().map((player) => ({
       id: player.id,
       x: player.position.x,
@@ -456,37 +598,103 @@ function handleResize() {
 }
 
 
+
+function updateHpBar() {
+  if (!hpBarFill || !playerLives[selfId]) return;
+  const hp = playerLives[selfId].getLife ? playerLives[selfId].getLife() : playerLives[selfId].life;
+  const maxHp = playerLives[selfId].maxLife || 15;
+  const percent = Math.max(0, Math.min(1, hp / maxHp));
+  // Reverse: fill from left, empty to right
+  hpBarFill.style.width = (percent * 100) + '%';
+}
+
 function loop() {
+  updateScoreDisplay();
+  updateMatchTimerDisplay();
+  if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
   const delta = Math.min(clock.getDelta(), 0.05);
 
-  if (isHost()) {
-    localPlayer.input = readCurrentInputState(keys);
-    simulationAccumulator += delta;
+  if (!isPaused) {
+    // Timer only runs when not paused
+    if (isHost()) {
+      matchTime += (performance.now() - lastUnpausedTime) / 1000;
+    }
+    lastUnpausedTime = performance.now();
 
-    while (simulationAccumulator >= SIMULATION_STEP) {
-      simulateAuthoritativeStep(SIMULATION_STEP);
-      simulationAccumulator -= SIMULATION_STEP;
+    if (isHost()) {
+      localPlayer.input = readCurrentInputState(keys);
+      simulationAccumulator += delta;
+
+      while (simulationAccumulator >= SIMULATION_STEP) {
+        simulateAuthoritativeStep(SIMULATION_STEP);
+        simulationAccumulator -= SIMULATION_STEP;
+      }
+
+      snapshotAccumulator += delta * 1000;
+      if (snapshotAccumulator >= SNAPSHOT_SEND_INTERVAL_MS) {
+        snapshotAccumulator = 0;
+        sendSnapshotPacket();
+      }
+
+      syncPlayerTransform(localPlayer);
+      for (const remote of remotePlayers.values()) {
+        syncPlayerTransform(remote);
+      }
+    } else {
+      inputAccumulator += delta * 1000;
+      updatePredictedLocalPlayer(delta);
+      updateRemotePlayers(delta);
+      sendInputPacket();
     }
 
-    snapshotAccumulator += delta * 1000;
-    if (snapshotAccumulator >= SNAPSHOT_SEND_INTERVAL_MS) {
-      snapshotAccumulator = 0;
-      sendSnapshotPacket();
-    }
-
-    syncPlayerTransform(localPlayer);
-    for (const remote of remotePlayers.values()) {
-      syncPlayerTransform(remote);
+    // Life system tick: damage if outside floor/wall every 0.5s
+    lifeTickAccumulator += delta;
+    if (lifeTickAccumulator >= LIFE_TICK_INTERVAL) {
+      lifeTickAccumulator = 0;
+      const map = getActiveMap();
+      // Local player
+      if (playerLives[selfId].isAlive() && !isOnFloorOrWall(localPlayer, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
+        playerLives[selfId].loseLife(LIFE_TICK_DAMAGE);
+        if (!playerLives[selfId].isAlive()) {
+          // Despawn car
+          if (localPlayer.group.parentNode) world.remove(localPlayer.group);
+          // Award 1 point to all alive remote players
+          for (const [peerId, remoteLife] of Object.entries(playerLives)) {
+            if (peerId !== selfId && remoteLife.isAlive() && remotePlayers.has(peerId) && remotePlayers.get(peerId).score !== undefined) {
+              remotePlayers.get(peerId).score += 1;
+            }
+          }
+        }
+      }
+      // Remote players
+      for (const [peerId, player] of remotePlayers.entries()) {
+        if (playerLives[peerId].isAlive() && !isOnFloorOrWall(player, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
+          playerLives[peerId].loseLife(LIFE_TICK_DAMAGE);
+          if (!playerLives[peerId].isAlive()) {
+            // Despawn car
+            if (player.group.parentNode) world.remove(player.group);
+            // Award 1 point to all alive players except eliminated
+            if (localPlayer && playerLives[selfId].isAlive() && localPlayer.score !== undefined) {
+              localPlayer.score += 1;
+            }
+            for (const [otherPeerId, otherPlayer] of remotePlayers.entries()) {
+              if (otherPeerId !== peerId && playerLives[otherPeerId].isAlive() && otherPlayer.score !== undefined) {
+                otherPlayer.score += 1;
+              }
+            }
+          }
+        }
+      }
     }
   } else {
-    inputAccumulator += delta * 1000;
-    updatePredictedLocalPlayer(delta);
-    updateRemotePlayers(delta);
-    sendInputPacket();
+    // If paused, just update the lastUnpausedTime so timer resumes smoothly
+    lastUnpausedTime = performance.now();
   }
 
-  // Camera logic: follow car in play mode, free move in edit mode
-  if (isEditMode) {
+  updateHpBar();
+
+  // Camera logic: follow car in play mode, free move in edit mode or if eliminated
+  if (isEditMode || !playerLives[selfId]?.isAlive()) {
     updateEditorView(delta);
   } else {
     updateWorldView(delta);
@@ -588,7 +796,11 @@ function getAllPlayers() {
 }
 
 function simulateAuthoritativeStep(delta) {
-  const players = getAllPlayers();
+  // Only include alive players for movement and collision
+  const players = getAllPlayers().filter(p => {
+    if (p.id === selfId) return playerLives[selfId]?.isAlive();
+    return playerLives[p.id]?.isAlive();
+  });
 
   for (const player of players) {
     const input = player.isLocal ? readCurrentInputState(keys) : player.input;
@@ -597,6 +809,7 @@ function simulateAuthoritativeStep(delta) {
     resolveMapWallCollisions(player);
   }
 
+  // Only resolve collisions between alive players
   for (let index = 0; index < players.length; index += 1) {
     for (let otherIndex = index + 1; otherIndex < players.length; otherIndex += 1) {
       resolvePlayerCollision(players[index], players[otherIndex]);
@@ -620,7 +833,7 @@ function applySnapshot(playerStates) {
       continue;
     }
 
-    const player = ensureRemotePlayer(
+    const player = ensureRemotePlayerWithLife(
       remotePlayers,
       world,
       playerState.id,

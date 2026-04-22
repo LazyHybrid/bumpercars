@@ -1,3 +1,129 @@
+/* Global Match Timer Styles */
+#global-match-timer {
+  position: fixed;
+  top: 32px;
+  right: 32px;
+  background: rgba(34, 34, 34, 0.92);
+  color: #fff;
+  font-size: 2.2rem;
+  font-weight: 700;
+  padding: 0.6em 1.4em;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  z-index: 99999;
+  pointer-events: none;
+  letter-spacing: 0.04em;
+}
+/* New Match Button Styles */
+.hud__new-match {
+  display: block;
+  margin: 0 auto 0.7em auto;
+  padding: 0.5em 1.6em;
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: #3f51b5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+  transition: background 0.18s;
+}
+.hud__new-match:hover {
+  background: #283593;
+}
+/* Pause Menu Styles */
+.pause-menu {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 30, 0.82);
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pause-menu__content {
+  background: #23243a;
+  border-radius: 18px;
+  padding: 2.5em 3em 2em 3em;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.32);
+  min-width: 340px;
+  text-align: center;
+}
+.pause-menu__content h2 {
+  color: #fff;
+  font-size: 2.2rem;
+  margin-bottom: 0.7em;
+}
+#match-timer {
+  color: #fff;
+  font-size: 1.6rem;
+  margin-bottom: 1.2em;
+  font-family: monospace;
+}
+.pause-menu__resume {
+  margin-top: 1.5em;
+  font-size: 1.2rem;
+  padding: 0.7em 2.2em;
+  border-radius: 10px;
+  background: #e53935;
+  color: #fff;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.pause-menu__resume:hover {
+  background: #b71c1c;
+}
+/* Score Display Styles */
+#score-display {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  background: rgba(34, 34, 34, 0.92);
+  color: #fff;
+  font-size: 2.2rem;
+  font-weight: 700;
+  padding: 0.6em 1.4em;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  z-index: 99999;
+  pointer-events: none;
+  letter-spacing: 0.04em;
+}
+/* HP Bar Styles */
+#hp-bar-container {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  height: 28px;
+  z-index: 99999;
+  pointer-events: none;
+}
+
+#hp-bar-bg {
+  width: 100%;
+  height: 20px;
+  background: #222;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  position: relative;
+}
+
+#hp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e53935 0%, #b71c1c 100%);
+  border-radius: 0 12px 12px 0;
+  transition: width 0.2s cubic-bezier(.4,1.4,.6,1);
+  width: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
 :root {
   color-scheme: light;
   font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
