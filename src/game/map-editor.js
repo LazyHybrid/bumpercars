@@ -191,7 +191,20 @@ export function createMapEditor(sceneRoot, world, ui) {
 
   return {
     destroy() {
-      world.remove(layer);
+      // Remove editor UI layer
+      if (layer.parentNode) {
+        world.remove(layer);
+      }
+      // Remove toolbars and extra UI
+      const parent = ui.actions.parentElement;
+      parent.querySelectorAll('.editor-toolbar, .editor-slot-toolbar, .editor-slot-actions, .editor-spawn-toolbar, .editor-slot-metadata').forEach(el => el.remove());
+      // Restore HUD labels if needed
+      ui.title.textContent = 'Bumper Cars';
+      ui.eyebrow.textContent = 'P2P room';
+      ui.hintLabel.textContent = 'Use WASD to drive. Open the copied link in another browser to join the same arena.';
+      ui.newRoomButton.textContent = 'New room';
+      ui.copyLinkButton.textContent = 'Copy join link';
+      ui.statusLabel.textContent = '';
     },
   };
 }

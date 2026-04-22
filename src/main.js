@@ -28,16 +28,21 @@ import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 
 const appMode = import.meta.env.VITE_APP_MODE ?? 'play';
 
+
 const sceneRoot = document.querySelector('#scene');
-const eyebrowLabel = document.querySelector('.eyebrow');
-const titleLabel = document.querySelector('h1');
-const roomLabel = document.querySelector('#room-label');
-const peerCountLabel = document.querySelector('#peer-count');
-const statusLabel = document.querySelector('#status');
-const copyLinkButton = document.querySelector('#copy-link');
-const newRoomButton = document.querySelector('#new-room');
-const hintLabel = document.querySelector('.hint');
-const actions = document.querySelector('.hud__actions');
+const playHud = document.getElementById('play-hud');
+const editorHud = document.getElementById('editor-hud');
+const eyebrowLabel = playHud.querySelector('.eyebrow');
+const titleLabel = playHud.querySelector('h1');
+const roomLabel = playHud.querySelector('#room-label');
+const peerCountLabel = playHud.querySelector('#peer-count');
+const statusLabel = playHud.querySelector('#status');
+const copyLinkButton = playHud.querySelector('#copy-link');
+const newRoomButton = playHud.querySelector('#new-room');
+const hintLabel = playHud.querySelector('.hint');
+const actions = playHud.querySelector('.hud__actions');
+const toggleEditButton = playHud.querySelector('#toggle-edit');
+const togglePlayButton = playHud.querySelector('#toggle-play');
 
 const { world, clock } = createWorld(sceneRoot);
 const initialMap = getActiveMap();
@@ -72,39 +77,124 @@ const viewPosition = new Vec2(spawnPoint.x, spawnPoint.y);
 
 const localPlayer = createPlayer(selfId, true, colorFromId(selfId), spawnPoint);
 
-if (appMode === 'map') {
-  startMapEditor();
-} else {
+
+let isEditMode = false;
+let mapEditorInstance = null;
+
+
+function enterEditMode() {
+  isEditMode = true;
+  playHud.style.display = 'none';
+  editorHud.style.display = '';
+  // Show edit toggle
+  toggleEditButton.style.display = 'none';
+  togglePlayButton.style.display = '';
+  // Start editor, pass editorHud as the UI container
+  mapEditorInstance = startMapEditor(editorHud);
+}
+
+
+function exitEditMode() {
+  isEditMode = false;
+  playHud.style.display = '';
+  editorHud.style.display = 'none';
+  // Show edit toggle
+  toggleEditButton.style.display = '';
+  togglePlayButton.style.display = 'none';
+  // Destroy editor UI if present
+  if (mapEditorInstance && typeof mapEditorInstance.destroy === 'function') {
+    mapEditorInstance.destroy();
+    mapEditorInstance = null;
+  }
+  // Resume play controls and loop
   world.add(localPlayer.group);
   setupInput(keys);
-  setupRoom();
-  setupUi();
-  window.addEventListener('resize', handleResize);
   requestAnimationFrame(loop);
 }
 
-function startMapEditor() {
-  const ui = {
-    eyebrow: eyebrowLabel,
-    title: titleLabel,
-    roomLabel,
-    peerCountLabel,
-    statusLabel,
-    copyLinkButton,
-    newRoomButton,
-    hintLabel,
-    actions,
-  };
+toggleEditButton.addEventListener('click', () => {
+  if (!isEditMode) {
+    enterEditMode();
+  }
+});
+togglePlayButton.addEventListener('click', () => {
+  if (isEditMode) {
+    exitEditMode();
+  }
+});
 
-  createMapEditor(sceneRoot, world, ui);
+// Start in play mode
+world.add(localPlayer.group);
+setupInput(keys);
+setupRoom();
+setupUi();
+window.addEventListener('resize', handleResize);
+requestAnimationFrame(loop);
+
+
+
+function startMapEditor(editorHudContainer) {
+  // Clear previous editor HUD
+  editorHudContainer.innerHTML = '';
+  // Create a new HUD card for the editor
+  const editorCard = document.createElement('div');
+  editorCard.className = 'hud__card';
+  editorHudContainer.appendChild(editorCard);
+  // Create UI references for the editor
+  const ui = {
+    eyebrow: document.createElement('p'),
+    title: document.createElement('h1'),
+    roomLabel: document.createElement('p'),
+    peerCountLabel: document.createElement('p'),
+    statusLabel: document.createElement('p'),
+    copyLinkButton: document.createElement('button'),
+    newRoomButton: document.createElement('button'),
+    hintLabel: document.createElement('p'),
+    actions: document.createElement('div'),
+  };
+  ui.eyebrow.className = 'eyebrow';
+  ui.roomLabel.id = 'room-label';
+  ui.peerCountLabel.id = 'peer-count';
+  ui.statusLabel.id = 'status';
+  ui.copyLinkButton.id = 'copy-link';
+  ui.newRoomButton.id = 'new-room';
+  ui.hintLabel.className = 'hint';
+  ui.actions.className = 'hud__actions';
+  // Add Play Game button to editor HUD
+  const playButton = document.createElement('button');
+  playButton.id = 'editor-toggle-play';
+  playButton.textContent = 'Play Game';
+  playButton.style.marginRight = '0.5rem';
+  playButton.onclick = () => {
+    if (typeof exitEditMode === 'function') exitEditMode();
+  };
+  ui.actions.appendChild(playButton);
+  editorCard.appendChild(ui.eyebrow);
+  editorCard.appendChild(ui.title);
+  editorCard.appendChild(ui.roomLabel);
+  editorCard.appendChild(ui.actions);
+  editorCard.appendChild(ui.hintLabel);
+  editorCard.appendChild(ui.peerCountLabel);
+  editorCard.appendChild(ui.statusLabel);
+  editorCard.appendChild(ui.copyLinkButton);
+  editorCard.appendChild(ui.newRoomButton);
+  // Remove player group from world if present
+  if (localPlayer.group.parentNode) {
+    world.remove(localPlayer.group);
+  }
+  // Start editor
+  const editor = createMapEditor(sceneRoot, world, ui);
   setupInput(keys);
   viewPosition.set(0, 0);
   world.setViewPosition(viewPosition.x, viewPosition.y);
   window.addEventListener('resize', handleResize);
   requestAnimationFrame(mapEditorLoop);
+  return editor;
 }
 
+
 function mapEditorLoop() {
+  if (!isEditMode) return;
   const delta = Math.min(clock.getDelta(), 0.05);
   updateEditorView(delta);
   world.render();
@@ -365,6 +455,7 @@ function handleResize() {
   world.setSize(window.innerWidth, window.innerHeight);
 }
 
+
 function loop() {
   const delta = Math.min(clock.getDelta(), 0.05);
 
@@ -394,7 +485,12 @@ function loop() {
     sendInputPacket();
   }
 
-  updateWorldView(delta);
+  // Camera logic: follow car in play mode, free move in edit mode
+  if (isEditMode) {
+    updateEditorView(delta);
+  } else {
+    updateWorldView(delta);
+  }
 
   world.render();
   requestAnimationFrame(loop);
