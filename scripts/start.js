@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 
 const args = process.argv.slice(2);
 const mapMode = args.includes('-map');
-const forwardedArgs = args.filter((arg) => arg !== '-map');
+const forceHttp = args.includes('--http');
+const forwardedArgs = args.filter((arg) => arg !== '-map' && arg !== '--http');
 
 if (!forwardedArgs.includes('--host')) {
   forwardedArgs.push('--host');
@@ -20,6 +21,7 @@ const child = spawn(
     env: {
       ...process.env,
       VITE_APP_MODE: mapMode ? 'map' : (process.env.VITE_APP_MODE ?? 'play'),
+      VITE_DEV_HTTPS: forceHttp ? '0' : '1',
     },
   }
 );

@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import {
   CAR_COLLISION_DISTANCE_MULTIPLIER,
   BUMPER_ZONE_RESTITUTION,
@@ -13,6 +12,7 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
+import { clamp, lerp, Vec2 } from './math';
 import { getActiveMap, mapWallToWorldRect } from './map-data';
 
 const inversePlayerMass = 1 / PLAYER_MASS;
@@ -30,21 +30,21 @@ export function simulateMovement(player, input, delta) {
     ? Math.min(1, player.speedRamp + delta / SPEED_RAMP_TIME_SECONDS)
     : Math.max(0, player.speedRamp - delta / (SPEED_RAMP_TIME_SECONDS * 0.5));
 
-  const speedScale = THREE.MathUtils.lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, player.speedRamp);
+  const speedScale = lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, player.speedRamp);
   const acceleration = (input.forward ? 22 : input.backward ? -15 : 0) * speedScale;
   const speed = player.velocity.length();
   const steerInput = (input.left ? 1 : 0) - (input.right ? 1 : 0);
   const strafeInput = (input.strafeRight ? 1 : 0) - (input.strafeLeft ? 1 : 0);
-  const steerStrength = THREE.MathUtils.lerp(1.7, 2.8, Math.min(speed / 14, 1));
+  const steerStrength = lerp(1.7, 2.8, Math.min(speed / 14, 1));
 
   player.heading -= steerInput * steerStrength * delta * (speed > 0.2 ? 1 : 0.45);
 
-  const forward = new THREE.Vector2(Math.sin(player.heading), -Math.cos(player.heading));
-  const right = new THREE.Vector2(-forward.y, forward.x);
+  const forward = new Vec2(Math.sin(player.heading), -Math.cos(player.heading));
+  const right = new Vec2(-forward.y, forward.x);
   player.velocity.addScaledVector(forward, acceleration * delta);
   player.velocity.addScaledVector(right, strafeInput * 22 * speedScale * delta);
 
-  const forwardSpeed = player.velocity.dot(forward);
+  player.velocity.dot(forward);
   const sideSpeed = player.velocity.dot(right);
   const lateral = right.clone().multiplyScalar(sideSpeed);
   const appliedLateralGrip = strafeInput === 0 ? lateralGrip : strafeGrip;
@@ -133,7 +133,7 @@ function getCollisionFallbackNormal(playerA, playerB) {
 }
 
 function getForwardVector(heading) {
-  return new THREE.Vector2(Math.sin(heading), -Math.cos(heading)).normalize();
+  return new Vec2(Math.sin(heading), -Math.cos(heading)).normalize();
 }
 
 function getCollisionMotion(player) {
@@ -159,18 +159,18 @@ function resolveStaticRectCollision(player, rect) {
     return;
   }
 
-  const nearestX = THREE.MathUtils.clamp(player.position.x, rect.minX, rect.maxX);
-  const nearestY = THREE.MathUtils.clamp(player.position.y, rect.minY, rect.maxY);
-  const delta = player.position.clone().sub(new THREE.Vector2(nearestX, nearestY));
+  const nearestX = clamp(player.position.x, rect.minX, rect.maxX);
+  const nearestY = clamp(player.position.y, rect.minY, rect.maxY);
+  const delta = player.position.clone().sub(new Vec2(nearestX, nearestY));
   let normal = delta;
   let distance = delta.length();
 
   if (distance <= 0.0001) {
     const distancesToFaces = [
-      { value: Math.abs(player.position.x - rect.minX), normal: new THREE.Vector2(-1, 0) },
-      { value: Math.abs(rect.maxX - player.position.x), normal: new THREE.Vector2(1, 0) },
-      { value: Math.abs(player.position.y - rect.minY), normal: new THREE.Vector2(0, -1) },
-      { value: Math.abs(rect.maxY - player.position.y), normal: new THREE.Vector2(0, 1) },
+      { value: Math.abs(player.position.x - rect.minX), normal: new Vec2(-1, 0) },
+      { value: Math.abs(rect.maxX - player.position.x), normal: new Vec2(1, 0) },
+      { value: Math.abs(player.position.y - rect.minY), normal: new Vec2(0, -1) },
+      { value: Math.abs(rect.maxY - player.position.y), normal: new Vec2(0, 1) },
     ];
     distancesToFaces.sort((a, b) => a.value - b.value);
     normal = distancesToFaces[0].normal;
@@ -184,7 +184,7 @@ function resolveStaticRectCollision(player, rect) {
     return;
   }
 
-  const touchAmount = THREE.MathUtils.clamp((penetration + wallContactThreshold) / wallContactThreshold, 0, 1);
+  const touchAmount = clamp((penetration + wallContactThreshold) / wallContactThreshold, 0, 1);
   const clampedPenetration = Math.max(0, penetration);
 
   if (clampedPenetration > 0) {

@@ -1,5 +1,4 @@
 import './style.css';
-import * as THREE from 'three';
 import { joinRoom, selfId } from '@trystero-p2p/nostr';
 import {
   INPUT_SEND_INTERVAL_MS,
@@ -19,9 +18,10 @@ import {
   TURN_USERNAME,
 } from './game/config';
 import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
-import { getActiveMap, getMapSpawn, mapCellToWorld } from './game/map-data';
+import { getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
 import { createMapEditor } from './game/map-editor';
+import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
@@ -39,9 +39,9 @@ const newRoomButton = document.querySelector('#new-room');
 const hintLabel = document.querySelector('.hint');
 const actions = document.querySelector('.hud__actions');
 
-const { renderer, scene, camera, clock } = createWorld(sceneRoot);
-const activeMap = getActiveMap();
-const spawnPoint = mapCellToWorld(getMapSpawn(activeMap, 0).x, getMapSpawn(activeMap, 0).y);
+const { world, clock } = createWorld(sceneRoot);
+const initialMap = getActiveMap();
+const spawnPoint = mapCellToWorld(getMapSpawn(initialMap, 0).x, getMapSpawn(initialMap, 0).y);
 
 const keys = {
   forward: false,
@@ -59,6 +59,8 @@ let sendInput = null;
 let sendSnapshot = null;
 let receiveInput = null;
 let receiveSnapshot = null;
+let sendMap = null;
+let receiveMap = null;
 let roomId = '';
 let hostId = selfId;
 let simulationAccumulator = 0;
@@ -66,13 +68,14 @@ let snapshotAccumulator = 0;
 let inputAccumulator = 0;
 let lastSentInputSignature = '';
 const EDIT_CAMERA_SPEED = 30;
+const viewPosition = new Vec2(spawnPoint.x, spawnPoint.y);
 
-const localPlayer = createPlayer(selfId, true, colorFromId(selfId), new THREE.Vector3(spawnPoint.x, 0, spawnPoint.y));
+const localPlayer = createPlayer(selfId, true, colorFromId(selfId), spawnPoint);
 
 if (appMode === 'map') {
   startMapEditor();
 } else {
-  scene.add(localPlayer.group);
+  world.add(localPlayer.group);
   setupInput(keys);
   setupRoom();
   setupUi();
@@ -93,17 +96,18 @@ function startMapEditor() {
     actions,
   };
 
-  createMapEditor(sceneRoot, scene, ui);
+  createMapEditor(sceneRoot, world, ui);
   setupInput(keys);
-  camera.position.set(0, 0, 0);
+  viewPosition.set(0, 0);
+  world.setViewPosition(viewPosition.x, viewPosition.y);
   window.addEventListener('resize', handleResize);
   requestAnimationFrame(mapEditorLoop);
 }
 
 function mapEditorLoop() {
   const delta = Math.min(clock.getDelta(), 0.05);
-  updateEditorCamera(delta);
-  renderer.render(scene, camera);
+  updateEditorView(delta);
+  world.render();
   requestAnimationFrame(mapEditorLoop);
 }
 
@@ -130,9 +134,15 @@ function setupRoom() {
   roomId = ensureRoomId();
   roomLabel.textContent = `Room: ${roomId}`;
 
+  if (!canUseMultiplayer()) {
+    statusLabel.textContent = `Multiplayer requires HTTPS or localhost. Open ${buildSecureRoomUrl()} instead.`;
+    return;
+  }
+
   room = joinRoom(buildRoomConfig(), roomId);
   [sendInput, receiveInput] = room.makeAction('input');
   [sendSnapshot, receiveSnapshot] = room.makeAction('snapshot');
+  [sendMap, receiveMap] = room.makeAction('map');
 
   refreshHostRole();
   updatePeerCount();
@@ -142,13 +152,14 @@ function setupRoom() {
     syncActiveRoster();
 
     if (isPeerActive(peerId)) {
-      ensureRemotePlayer(remotePlayers, scene, peerId, getSpawnVector(peerId));
+      ensureRemotePlayer(remotePlayers, world, peerId, getSpawnPoint(peerId));
     }
 
     refreshHostRole();
     updatePeerCount();
 
     if (isHost() && isPeerActive(peerId)) {
+      sendMapPacket(peerId);
       sendSnapshotPacket(peerId);
     } else if (!isHost() && isPeerActive(selfId)) {
       sendInputPacket(true);
@@ -159,7 +170,7 @@ function setupRoom() {
     participantIds.delete(peerId);
     const player = remotePlayers.get(peerId);
     if (player) {
-      scene.remove(player.group);
+      world.remove(player.group);
       remotePlayers.delete(peerId);
     }
     syncActiveRoster();
@@ -176,7 +187,7 @@ function setupRoom() {
       return;
     }
 
-    const player = ensureRemotePlayer(remotePlayers, scene, peerId, getSpawnVector(peerId));
+    const player = ensureRemotePlayer(remotePlayers, world, peerId, getSpawnPoint(peerId));
     player.input = normalizeInput(payload);
     player.lastSeenAt = performance.now();
   });
@@ -194,6 +205,21 @@ function setupRoom() {
     }
 
     applySnapshot(payload.players);
+  });
+
+  receiveMap((payload, peerId) => {
+    if (!payload?.map) {
+      return;
+    }
+
+    participantIds.add(peerId);
+    refreshHostRole(payload.hostId ?? peerId);
+
+    if (peerId !== hostId) {
+      return;
+    }
+
+    applyAuthoritativeMap(payload.map);
   });
 }
 
@@ -324,10 +350,19 @@ function sendSnapshotPacket(targetPeers) {
   }, targetPeers);
 }
 
+function sendMapPacket(targetPeers) {
+  if (!isHost() || !sendMap) {
+    return;
+  }
+
+  sendMap({
+    hostId: selfId,
+    map: getActiveMap(),
+  }, targetPeers);
+}
+
 function handleResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  world.setSize(window.innerWidth, window.innerHeight);
 }
 
 function loop() {
@@ -359,9 +394,9 @@ function loop() {
     sendInputPacket();
   }
 
-  updateCamera(delta);
+  updateWorldView(delta);
 
-  renderer.render(scene, camera);
+  world.render();
   requestAnimationFrame(loop);
 }
 
@@ -378,7 +413,7 @@ function updateRemotePlayers(delta) {
 
   for (const [peerId, player] of remotePlayers.entries()) {
     if (now - player.lastSeenAt > REMOTE_TIMEOUT_MS) {
-      scene.remove(player.group);
+      world.remove(player.group);
       remotePlayers.delete(peerId);
       updatePeerCount();
       continue;
@@ -388,6 +423,21 @@ function updateRemotePlayers(delta) {
     player.velocity.lerp(player.targetVelocity, Math.min(1, delta * 6));
     player.heading = lerpAngle(player.heading, player.targetHeading, Math.min(1, delta * 10));
     syncPlayerTransform(player);
+  }
+}
+
+function applyAuthoritativeMap(nextMap) {
+  const appliedMap = setSessionMap(nextMap);
+  world.setMap(appliedMap);
+  syncActiveRoster();
+
+  if (!isHost()) {
+    const localSpawn = getSpawnPoint(selfId);
+    localPlayer.position.set(localSpawn.x, localSpawn.y);
+    localPlayer.previousPosition.copy(localPlayer.position);
+    localPlayer.targetPosition.copy(localPlayer.position);
+    viewPosition.copy(localPlayer.position);
+    world.setViewPosition(viewPosition.x, viewPosition.y);
   }
 }
 
@@ -405,29 +455,31 @@ function reconcileLocalPlayer(delta) {
   );
 }
 
-function updateCamera(delta) {
-  const desiredPosition = new THREE.Vector3(localPlayer.position.x, 0, localPlayer.position.y);
-  camera.position.lerp(desiredPosition, Math.min(1, delta * 5.5));
+function updateWorldView(delta) {
+  viewPosition.lerp(localPlayer.position, Math.min(1, delta * 5.5));
+  world.setViewPosition(viewPosition.x, viewPosition.y);
 }
 
-function updateEditorCamera(delta) {
-  const cameraStep = EDIT_CAMERA_SPEED * delta;
+function updateEditorView(delta) {
+  const viewStep = EDIT_CAMERA_SPEED * delta;
 
   if (keys.forward) {
-    camera.position.z -= cameraStep;
+    viewPosition.y -= viewStep;
   }
 
   if (keys.backward) {
-    camera.position.z += cameraStep;
+    viewPosition.y += viewStep;
   }
 
   if (keys.left) {
-    camera.position.x -= cameraStep;
+    viewPosition.x -= viewStep;
   }
 
   if (keys.right) {
-    camera.position.x += cameraStep;
+    viewPosition.x += viewStep;
   }
+
+  world.setViewPosition(viewPosition.x, viewPosition.y);
 }
 
 function getAllPlayers() {
@@ -474,13 +526,13 @@ function applySnapshot(playerStates) {
 
     const player = ensureRemotePlayer(
       remotePlayers,
-      scene,
+      world,
       playerState.id,
-      new THREE.Vector3(playerState.x, 0, playerState.z)
+      { x: playerState.x, y: playerState.z }
     );
 
-    const positionError = player.position.distanceTo(new THREE.Vector2(playerState.x, playerState.z));
-    const velocityError = player.velocity.distanceTo(new THREE.Vector2(playerState.vx, playerState.vz));
+    const positionError = player.position.distanceTo(new Vec2(playerState.x, playerState.z));
+    const velocityError = player.velocity.distanceTo(new Vec2(playerState.vx, playerState.vz));
     const shouldSnapToSnapshot = positionError >= SNAPSHOT_POSITION_SNAP_DISTANCE
       || velocityError >= SNAPSHOT_VELOCITY_SNAP_DELTA;
 
@@ -528,28 +580,40 @@ function isPeerActive(peerId) {
   return getActiveParticipantIds().includes(peerId);
 }
 
-function getSpawnVector(peerId) {
+function getSpawnPoint(peerId) {
   const spawnIndex = Math.max(0, getActiveParticipantIds().indexOf(peerId));
-  const spawnCell = getMapSpawn(activeMap, spawnIndex);
-  const worldSpawn = mapCellToWorld(spawnCell.x, spawnCell.y);
-  return new THREE.Vector3(worldSpawn.x, 0, worldSpawn.y);
+  const spawnCell = getMapSpawn(getActiveMap(), spawnIndex);
+  return mapCellToWorld(spawnCell.x, spawnCell.y);
+}
+
+function canUseMultiplayer() {
+  return window.isSecureContext && typeof RTCPeerConnection !== 'undefined' && Boolean(globalThis.crypto?.subtle);
+}
+
+function buildSecureRoomUrl() {
+  const secureUrl = new URL(window.location.href);
+  secureUrl.protocol = 'https:';
+  secureUrl.searchParams.set('room', roomId || ensureRoomId());
+  return secureUrl.toString();
 }
 
 function syncActiveRoster() {
   for (const [peerId, player] of remotePlayers.entries()) {
     if (!isPeerActive(peerId)) {
-      scene.remove(player.group);
+      world.remove(player.group);
       remotePlayers.delete(peerId);
     }
   }
 
   if (!isPeerActive(selfId) && localPlayer.group.parentNode) {
-    scene.remove(localPlayer.group);
+    world.remove(localPlayer.group);
   } else if (isPeerActive(selfId) && !localPlayer.group.parentNode) {
-    const spawnVector = getSpawnVector(selfId);
-    localPlayer.position.set(spawnVector.x, spawnVector.z);
+    const spawnPoint = getSpawnPoint(selfId);
+    localPlayer.position.set(spawnPoint.x, spawnPoint.y);
     localPlayer.previousPosition.copy(localPlayer.position);
     localPlayer.targetPosition.copy(localPlayer.position);
-    scene.add(localPlayer.group);
+    viewPosition.copy(localPlayer.position);
+    world.setViewPosition(viewPosition.x, viewPosition.y);
+    world.add(localPlayer.group);
   }
 }

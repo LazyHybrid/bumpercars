@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { euclideanModulo } from './math';
 
 export function parseListEnv(value) {
   return value
@@ -26,7 +26,7 @@ export function isLocalOrPrivateHost(hostname) {
 }
 
 export function lerpAngle(from, to, alpha) {
-  const wrappedDelta = THREE.MathUtils.euclideanModulo(to - from + Math.PI, Math.PI * 2) - Math.PI;
+  const wrappedDelta = euclideanModulo(to - from + Math.PI, Math.PI * 2) - Math.PI;
   return from + wrappedDelta * alpha;
 }
 

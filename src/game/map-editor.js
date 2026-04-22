@@ -21,7 +21,7 @@ const GRID_SIZE = MAP_GRID_SIZE;
 const CELL_SIZE = Math.round(MAP_CELL_SIZE * WORLD_SCALE);
 const EDIT_BRUSH_RADIUS = 0;
 
-export function createMapEditor(sceneRoot, scene, ui) {
+export function createMapEditor(sceneRoot, world, ui) {
   const storedMap = getActiveMap();
   const state = {
     activeSlot: getActiveMapSlot(),
@@ -35,7 +35,7 @@ export function createMapEditor(sceneRoot, scene, ui) {
 
   const layer = document.createElement('div');
   layer.className = 'editor-layer';
-  scene.add(layer);
+  world.add(layer);
 
   const grid = document.createElement('div');
   grid.className = 'editor-grid';
@@ -191,7 +191,7 @@ export function createMapEditor(sceneRoot, scene, ui) {
 
   return {
     destroy() {
-      scene.remove(layer);
+      world.remove(layer);
     },
   };
 }

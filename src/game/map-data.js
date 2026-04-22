@@ -17,6 +17,8 @@ export const MAP_KILLZONE_FIELD_MULTIPLIER = 5;
 export const MAP_KILLZONE_FIELD_SIZE = MAP_WORLD_SIZE * MAP_KILLZONE_FIELD_MULTIPLIER;
 export const MAP_INNER_ZONE_RADIUS = ARENA_RADIUS * 0.58;
 
+let sessionMap = null;
+
 export function createDefaultMap(arenaVariant = 'classic') {
   return {
     gridSize: MAP_GRID_SIZE,
@@ -52,11 +54,18 @@ export function getDefaultMapTemplate() {
 }
 
 export function getActiveMap() {
-  return getMapSlot(getActiveMapSlot());
+  return sessionMap ?? getMapSlot(getActiveMapSlot());
 }
 
 export function saveActiveMap(map) {
-  saveMapSlot(getActiveMapSlot(), map);
+  const normalizedMap = normalizeMap(map);
+  sessionMap = normalizedMap;
+  saveMapSlot(getActiveMapSlot(), normalizedMap);
+}
+
+export function setSessionMap(map) {
+  sessionMap = normalizeMap(map);
+  return sessionMap;
 }
 
 export function getActiveMapSlot() {
@@ -100,8 +109,13 @@ export function saveMapSlot(slot, map) {
 
   const normalizedSlot = clampSlot(slot);
   const database = getMapDatabase();
-  database[normalizedSlot - 1] = normalizeMap(map);
+  const normalizedMap = normalizeMap(map);
+  database[normalizedSlot - 1] = normalizedMap;
   window.localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(database));
+
+  if (normalizedSlot === getActiveMapSlot()) {
+    sessionMap = normalizedMap;
+  }
 }
 
 export function getMapSlotSummaries() {

@@ -1,12 +1,12 @@
-import * as THREE from 'three';
 import { createInputState } from './input';
+import { Vec2 } from './math';
 
 const WORLD_SCALE = 18;
 
 export function createPlayer(id, isLocal, color, spawnPosition) {
   const group = document.createElement('div');
   group.className = `car${isLocal ? ' car--local' : ''}`;
-  group.style.setProperty('--car-color', color.getStyle());
+  group.style.setProperty('--car-color', color);
 
   const bumper = document.createElement('div');
   bumper.className = 'car__bumper';
@@ -32,15 +32,15 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
     id,
     isLocal,
     group,
-    velocity: new THREE.Vector2(),
-    impactVelocity: new THREE.Vector2(),
-    position: new THREE.Vector2(spawnPosition.x, spawnPosition.z),
-    previousPosition: new THREE.Vector2(spawnPosition.x, spawnPosition.z),
-    collisionMotion: new THREE.Vector2(),
+    velocity: new Vec2(),
+    impactVelocity: new Vec2(),
+    position: new Vec2(spawnPosition.x, spawnPosition.y),
+    previousPosition: new Vec2(spawnPosition.x, spawnPosition.y),
+    collisionMotion: new Vec2(),
     heading: 0,
     speedRamp: 0,
-    targetPosition: new THREE.Vector2(spawnPosition.x, spawnPosition.z),
-    targetVelocity: new THREE.Vector2(),
+    targetPosition: new Vec2(spawnPosition.x, spawnPosition.y),
+    targetVelocity: new Vec2(),
     targetHeading: 0,
     input: createInputState(),
     hasSnapshot: isLocal,
@@ -48,13 +48,13 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
   };
 }
 
-export function ensureRemotePlayer(remotePlayers, scene, peerId, spawnPosition = createSpawnPosition(remotePlayers.size + 1)) {
+export function ensureRemotePlayer(remotePlayers, world, peerId, spawnPosition = createSpawnPosition(remotePlayers.size + 1)) {
   let player = remotePlayers.get(peerId);
 
   if (!player) {
     player = createPlayer(peerId, false, colorFromId(peerId), spawnPosition);
     remotePlayers.set(peerId, player);
-    scene.add(player.group);
+    world.add(player.group);
   }
 
   return player;
@@ -62,7 +62,7 @@ export function ensureRemotePlayer(remotePlayers, scene, peerId, spawnPosition =
 
 export function createSpawnPosition(index) {
   const angle = index * 0.8;
-  return new THREE.Vector3(Math.cos(angle) * 10, 0, Math.sin(angle) * 10);
+  return { x: Math.cos(angle) * 10, y: Math.sin(angle) * 10 };
 }
 
 export function syncPlayerTransform(player) {
@@ -79,5 +79,5 @@ export function colorFromId(id) {
   }
 
   const hue = Math.abs(hash) % 360;
-  return new THREE.Color(`hsl(${hue} 78% 55%)`);
+  return `hsl(${hue} 78% 55%)`;
 }

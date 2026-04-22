@@ -18,6 +18,8 @@ npm start
 
 Then open the local URL in your browser. The game will automatically generate a room ID in the URL if one is missing.
 
+The dev server starts with HTTPS by default so WebRTC and Web Crypto work on LAN devices as well as on `localhost`. If you need plain HTTP for debugging, run `npm start -- --http`.
+
 To invite another player, copy the full URL and open it on another device or browser.
 
 ## Map editor
