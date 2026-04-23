@@ -59,13 +59,22 @@ const matchTimerDisplay = document.getElementById('match-timer');
 const globalMatchTimer = document.getElementById('global-match-timer');
 const newMatchBtn = document.getElementById('new-match-btn');
 
+
 if (newMatchBtn) {
   newMatchBtn.addEventListener('click', () => {
-    resetMatch();
+    if (isHost()) {
+      resetMatch();
+      // After resetting, broadcast new state to all peers
+      sendSnapshotPacket();
+    } else {
+      statusLabel.textContent = 'Only the host can reset the match.';
+    }
   });
 }
 
 function resetMatch() {
+  // Only host should execute this
+  if (!isHost()) return;
   // Reset life, score, timer, and respawn all players at spawn
   matchTime = 0;
   lastUnpausedTime = performance.now();
@@ -217,7 +226,13 @@ let isEditMode = false;
 let mapEditorInstance = null;
 
 
+
 function enterEditMode() {
+  // Only host can enter edit mode
+  if (!isHost()) {
+    statusLabel.textContent = 'Only the host can use the map editor.';
+    return;
+  }
   isEditMode = true;
   playHud.style.display = 'none';
   editorHud.style.display = '';
@@ -864,9 +879,15 @@ function applySnapshot(playerStates) {
   }
 }
 
+
+// Only update hostId from host packets or on join/leave
 function refreshHostRole(forcedHostId) {
-  const nextHostId = forcedHostId ?? [...participantIds].sort()[0] ?? selfId;
-  hostId = nextHostId;
+  if (typeof forcedHostId === 'string') {
+    hostId = forcedHostId;
+  } else if (participantIds.size > 0) {
+    // Only recalculate on join/leave
+    hostId = [...participantIds].sort()[0] ?? selfId;
+  }
 
   if (!isPeerActive(selfId)) {
     statusLabel.textContent = `Room full. Only ${MAX_PLAYERS} players can be active.`;
