@@ -47,6 +47,9 @@ const copyLinkButton = playHud.querySelector('#copy-link');
 const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
+const readyButton = document.createElement('button');
+readyButton.textContent = 'Ready';
+actions.appendChild(readyButton);
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
 
@@ -372,6 +375,12 @@ function setupUi() {
     nextUrl.searchParams.set('room', createRoomId());
     window.location.href = nextUrl.toString();
   });
+
+  readyButton.addEventListener('click', () => {
+    if (!lobby) return;
+    lobby.handleLocalReady(true);
+  });
+
 }
 
 function setupRoom() {
