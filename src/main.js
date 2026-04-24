@@ -31,6 +31,7 @@ import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
+import { createLobbyUI } from './ui/lobby-ui';
 
 // =========================
 // DOM/UI References
@@ -47,6 +48,7 @@ const copyLinkButton = playHud.querySelector('#copy-link');
 const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
+const lobbyUI = createLobbyUI(playHud);
 const readyButton = document.createElement('button');
 readyButton.textContent = 'Ready';
 actions.appendChild(readyButton);
@@ -378,12 +380,28 @@ function setupUi() {
 
   readyButton.addEventListener('click', () => {
     if (!lobby) return;
-    lobby.handleLocalReady(true);
+    const current = lobby.state.players.get(selfId)?.ready ?? false;
+    lobby.handleLocalReady(!current);
   });
 
 }
 
+function renderLobby() {
+  if (!lobby || !lobbyList) return;
+
+  const active = getActiveParticipantIds();
+
+  lobbyList.innerHTML = active.map(id => {
+    const ready = lobby.state.players.get(id)?.ready;
+    return `${id === selfId ? 'You' : shortId(id)}: ${ready ? '✅' : '❌'}`;
+  }).join('<br>');
+}
+
 function setupRoom() {
+  if (lobby) {
+    lobby.state.players.set(selfId, { ready: false });
+  }
+
   roomId = ensureRoomId();
   roomLabel.textContent = `Room: ${roomId}`;
 
@@ -436,6 +454,8 @@ function setupRoom() {
 
     // Sync lobby state to new peer
     if (isHost() && lobby) {
+      lobby.state.players.set(peerId, { ready: false });
+
       const players = getActiveParticipantIds().map(id => ({
         id,
         ready: lobby.state.players.get(id)?.ready ?? false,
@@ -634,7 +654,8 @@ function sendSnapshotPacket(targetPeers) {
 
   sendSnapshot({
     hostId: selfId,
-    matchTime,
+    //matchTime,
+    matchTime: performance.now(), // TEMP
     players: getAllPlayers().map((player) => ({
       id: player.id,
       x: player.position.x,
@@ -673,6 +694,10 @@ function updateHpBar() {
 }
 
 function loop() {
+
+  lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
+
+  renderLobby();
 
   if (lobby) {
     console.log('LOBBY PHASE:', lobby.state.phase);
