@@ -427,6 +427,13 @@ function setupRoom() {
       ensureRemotePlayerWithLife(remotePlayers, world, peerId, getSpawnPoint(peerId));
     }
 
+    // FORCE spawn sync from host
+    if (!player.hasSpawned) {
+      player.position.set(playerState.x, playerState.z);
+      player.targetPosition.copy(player.position);
+      player.hasSpawned = true;
+    }
+
     refreshHostRole();
     updatePeerCount();
 
@@ -496,6 +503,13 @@ function setupRoom() {
   });
 
   receiveSnapshot((payload, peerId) => {
+
+    // ✅ SYNC PHASE FROM HOST
+    if (payload.phase && lobby) {
+      lobby.state.phase = payload.phase;
+      console.log('phase from host:', payload.phase);
+    }
+
     if (!payload || !Array.isArray(payload.players)) {
       return;
     }
@@ -654,8 +668,11 @@ function sendSnapshotPacket(targetPeers) {
 
   sendSnapshot({
     hostId: selfId,
-    //matchTime,
-    matchTime: performance.now(), // TEMP
+
+    phase: lobby?.state.phase ?? 'playing',
+
+    matchTime,
+
     players: getAllPlayers().map((player) => ({
       id: player.id,
       x: player.position.x,
@@ -663,7 +680,11 @@ function sendSnapshotPacket(targetPeers) {
       heading: player.heading,
       vx: player.velocity.x,
       vz: player.velocity.y,
-    })),
+
+      ready: lobby?.state.players.get(player.id)?.ready ?? false,
+      score: player.score ?? 0,
+      alive: playerLives[player.id]?.isAlive?.() ?? true,
+    }))
   }, targetPeers);
 }
 
@@ -907,7 +928,9 @@ function simulateAuthoritativeStep(delta) {
   });
 
   for (const player of players) {
-    const input = player.isLocal ? readCurrentInputState(keys) : player.input;
+    const input = player.isLocal
+      ? readCurrentInputState(keys)
+      : (player.input ?? { forward: false, backward: false, left: false, right: false, strafeLeft: false, strafeRight: false });
     simulateMovement(player, input, delta);
     resolveArenaCollision(player);
     resolveMapWallCollisions(player);
