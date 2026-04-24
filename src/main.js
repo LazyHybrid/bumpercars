@@ -422,12 +422,31 @@ function setupRoom() {
     },
   });
 
+    // Initialize host as ready = false explicitly
+    if (isHost()) {
+      lobby.handleLocalReady(false);
+    }
+
     if (isHost() && isPeerActive(peerId)) {
       sendMapPacket(peerId);
       sendSnapshotPacket(peerId);
     } else if (!isHost() && isPeerActive(selfId)) {
       sendInputPacket(true);
     }
+
+    // Sync lobby state to new peer
+    if (isHost() && lobby) {
+      const players = getActiveParticipantIds().map(id => ({
+        id,
+        ready: lobby.state.players.get(id)?.ready ?? false,
+      }));
+
+      sendLobby({
+        type: 'state',
+        players,
+      }, peerId);
+    }
+
   });
 
   room.onPeerLeave((peerId) => {
@@ -655,12 +674,20 @@ function updateHpBar() {
 
 function loop() {
 
-  if (lobby && lobby.state.phase !== 'playing') {
-    world.render();
-    requestAnimationFrame(loop);
-    return;
+  if (lobby) {
+    console.log('LOBBY PHASE:', lobby.state.phase);
   }
-
+/*
+  // Disable lobby gating for now
+   {if (lobby && lobby.state.phase !== 'playing') {
+    // Temporary: allow host to still simulate
+    if (!isHost()) {
+      world.render();
+      requestAnimationFrame(loop);
+      //return;
+    }
+}
+*/
   updateScoreDisplay();
   updateMatchTimerDisplay();
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
