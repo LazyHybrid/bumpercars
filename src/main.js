@@ -654,6 +654,13 @@ function updateHpBar() {
 }
 
 function loop() {
+
+  if (lobby && lobby.state.phase !== 'playing') {
+    world.render();
+    requestAnimationFrame(loop);
+    return;
+  }
+
   updateScoreDisplay();
   updateMatchTimerDisplay();
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
