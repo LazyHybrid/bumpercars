@@ -30,6 +30,7 @@ import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
+import { createLobbyController } from './lobby/lobby-controller';
 
 // =========================
 // DOM/UI References
@@ -178,6 +179,9 @@ let receiveInput = null;
 let receiveSnapshot = null;
 let sendMap = null;
 let receiveMap = null;
+let sendLobby = null;
+let receiveLobby = null;
+let lobby = null;
 let roomId = '';
 let hostId = selfId;
 let simulationAccumulator = 0;
@@ -383,6 +387,7 @@ function setupRoom() {
   [sendInput, receiveInput] = room.makeAction('input');
   [sendSnapshot, receiveSnapshot] = room.makeAction('snapshot');
   [sendMap, receiveMap] = room.makeAction('map');
+  [sendLobby, receiveLobby] = room.makeAction('lobby');
 
   refreshHostRole();
   updatePeerCount();
@@ -397,6 +402,16 @@ function setupRoom() {
 
     refreshHostRole();
     updatePeerCount();
+
+  lobby = createLobbyController({
+    selfId,
+    isHost,
+    getActiveParticipantIds,
+    sendLobby,
+    onStartGame: () => {
+      statusLabel.textContent = 'Game started!';
+    },
+  });
 
     if (isHost() && isPeerActive(peerId)) {
       sendMapPacket(peerId);
@@ -467,6 +482,12 @@ function setupRoom() {
 
     applyAuthoritativeMap(payload.map);
   });
+
+  receiveLobby((payload, peerId) => {
+    if (!lobby) return;
+    lobby.handleMessage(payload, peerId);
+  });
+
 }
 
 function ensureRoomId() {
