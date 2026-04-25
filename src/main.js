@@ -68,6 +68,11 @@ const newMatchBtn = document.getElementById('new-match-btn');
 // Lobby list container
 const lobbyList = document.getElementById('lobby-list');
 
+// Game state
+const gameState = {
+  phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'ended'
+};
+
 
 if (newMatchBtn) {
   newMatchBtn.addEventListener('click', () => {
@@ -438,6 +443,7 @@ function setupRoom() {
     sendLobby,
     onStartGame: () => {
       statusLabel.textContent = 'Game started!';
+      gameState.phase = 'playing';
 
       matchTime = 0;
       lastUnpausedTime = performance.now();
@@ -447,6 +453,7 @@ function setupRoom() {
 
   // add self
   lobby.state.players.set(selfId, { ready: false });
+  gameState.phase = 'lobby';
 
   refreshHostRole();
   updatePeerCount();
@@ -480,6 +487,7 @@ function setupRoom() {
 
       sendLobby({
         type: 'state',
+        phase: lobby.state.phase,
         players,
       }, peerId);
     }
@@ -521,6 +529,7 @@ function setupRoom() {
 
     if (payload.phase) {
       lobby.state.phase = payload.phase;
+      gameState.phase = payload.phase;
     }
 
     participantIds.add(peerId);
@@ -731,8 +740,6 @@ function loop() {
   try {
   //console.log('loop tick'); // For debugging freezes or performance issues
 
-  //updateUIVisibility();
-
   lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
 
   renderLobby();
@@ -740,14 +747,12 @@ function loop() {
   if (lobby) {
     //console.log('LOBBY PHASE:', lobby.state.phase); // Debugging lobby phase issues
   }
-/*
   // LOBBY GATING
-  if (lobby && lobby.state.phase !== 'playing') {
+  if (gameState.phase !== 'playing') {
     world.render();
     requestAnimationFrame(loop);
     return;
   }
-*/
   updateScoreDisplay();
   updateMatchTimerDisplay();
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
@@ -762,26 +767,6 @@ function loop() {
 
     // Host loop
     if (isHost()) {
-
-      if (isHost() && lobby && lobby.state.phase === 'lobby') {
-        const active = getActiveParticipantIds();
-
-        const allReady =
-          active.length > 0 &&
-          active.every(id => lobby.state.players.get(id)?.ready);
-
-        if (allReady) {
-          console.log('START GAME');
-
-          lobby.state.phase = 'playing';
-
-          matchTime = 0;
-          lastUnpausedTime = performance.now();
-
-          resetMatch();
-        }
-      }
-
       localPlayer.input = readCurrentInputState(keys);
       simulationAccumulator += delta;
 

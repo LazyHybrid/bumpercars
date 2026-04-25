@@ -39,6 +39,10 @@ export function createLobbyController({
 
     if (payload.type === 'state') {
       setPlayers(state, payload.players);
+      if (payload.phase === 'playing') {
+        state.phase = 'playing';
+        onStartGame();
+      }
     }
 
     if (payload.type === 'start') {
@@ -62,6 +66,7 @@ export function createLobbyController({
 
     sendLobby({
       type: 'state',
+      phase: state.phase,
       players,
     });
   }
@@ -71,8 +76,15 @@ export function createLobbyController({
 
     const active = getActiveParticipantIds();
 
+    if (active.length < 2) {
+      return;
+    }
+
     if (allPlayersReady(state, active)) {
       state.phase = 'playing';
+      if (typeof sendLobby === 'function') {
+        sendLobby({ type: 'start' });
+      }
       onStartGame();
     }
   }
