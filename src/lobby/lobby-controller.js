@@ -1,12 +1,7 @@
 // src/lobby/lobby-controller.js
 
-import {
-  createLobbyState,
-  setPlayerReady,
-  setPlayerName,
-  setPlayers,
-  allPlayersReady,
-} from './lobby-state';
+import { createLobbyState, setPlayerReady, setPlayerName, setPlayers, allPlayersReady,} from './lobby-state';
+import { renderLobby } from '../main.js';
 
 export function createLobbyController({
   selfId,
@@ -14,6 +9,9 @@ export function createLobbyController({
   getActiveParticipantIds,
   sendLobby,
   onStartGame,
+  onStateChange = () => {
+    renderLobby(); // TAI lobbyUI.render(...)
+  }
 }) {
   const state = createLobbyState(selfId);
 
@@ -29,6 +27,7 @@ export function createLobbyController({
 
   function handleLocalName(name) {
     setPlayerName(state, selfId, name);
+    onStateChange?.();
     if (isHost()) {
       broadcastState();
     } else {
@@ -43,6 +42,7 @@ export function createLobbyController({
       if (!isHost()) return;
 
       setPlayerReady(state, peerId, payload.ready);
+      onStateChange?.();
       broadcastState();
       maybeStart();
     }
@@ -51,11 +51,17 @@ export function createLobbyController({
       if (!isHost()) return;
 
       setPlayerName(state, peerId, payload.name);
+      onStateChange?.();
       broadcastState();
     }
 
     if (payload.type === 'state') {
       setPlayers(state, payload.players);
+
+      state.phase = payload.phase ?? state.phase;
+
+      onStateChange?.();
+
       if (payload.phase === 'playing') {
         state.phase = 'playing';
         onStartGame();

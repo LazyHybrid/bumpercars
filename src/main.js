@@ -32,9 +32,7 @@ import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
-import { validatePlayerName } from './lobby/lobby-helpers';
-import { updateNameValidation } from './lobby/lobby-helpers';
-
+import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
 
 // =========================
 // DOM/UI References
@@ -46,13 +44,13 @@ const eyebrowLabel = playHud.querySelector('.eyebrow');
 const titleLabel = playHud.querySelector('h1');
 const roomLabel = playHud.querySelector('#room-label');
 const peerCountLabel = playHud.querySelector('#peer-count');
-const statusLabel = playHud.querySelector('#status');
+export const statusLabel = playHud.querySelector('#status');
 const copyLinkButton = playHud.querySelector('#copy-link');
 const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
 const lobbyUI = createLobbyUI(playHud);
-const readyButton = playHud?.querySelector('#ready-btn');
+export const readyButton = playHud?.querySelector('#ready-btn');
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
 
@@ -84,9 +82,14 @@ const newMatchBtn = document.getElementById('new-match-btn');
 
 // Lobby list container
 const lobbyList = document.getElementById('lobby-list');
+export let lobbyRef = null;
+
+export function setLobbyRef(lobby) {
+  lobbyRef = lobby;
+}
 
 // Game state
-const gameState = {
+export const gameState = {
   phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'ended'
 };
 
@@ -220,7 +223,7 @@ let sendMap = null;
 let receiveMap = null;
 let sendLobby = null;
 let receiveLobby = null;
-let lobby = null;
+export let lobby = null;
 let roomId = '';
 let hostId = selfId;
 let simulationAccumulator = 0;
@@ -314,12 +317,16 @@ function safeGetPlayer(id) {
 
 if (toggleEditButton) {
   toggleEditButton.addEventListener('click', () => {
-    if (!isEditMode) enterEditMode();
+    if (!isEditMode) {
+      gameState.phase = 'editing';
+      enterEditMode();
+    }
   });
 }
 
 togglePlayButton.addEventListener('click', () => {
   if (isEditMode) {
+    gameState.phase = 'playing';
     exitEditMode();
   }
 });
@@ -329,6 +336,7 @@ world.add(localPlayer.group);
 setupInput(keys);
 setupRoom();
 setupUi();
+initNameUI();
 window.addEventListener('resize', handleResize);
 requestAnimationFrame(loop);
 
@@ -402,20 +410,20 @@ function mapEditorLoop() {
   requestAnimationFrame(mapEditorLoop);
 }
 
-function setLocalPlayerName(name) {
+export function setLocalPlayerName(name) {
   if (!lobby) return;
 
   const existing = lobby.state.players.get(selfId);
-
-  lobby.state.players.set(selfId, {
-    name,
-    ready: existing?.ready ?? false,
-  });
+  
+  lobby.handleLocalName(name);
 
   updateNameValidation(name);
 }
 
 function setupUi() {
+
+  submitName();
+
   copyLinkButton.addEventListener('click', async () => {
     const shareLink = buildShareUrl();
 
@@ -435,7 +443,7 @@ function setupUi() {
 
 }
 
-function renderLobby() {
+export function renderLobby() {
   console.log('LOBBY STATE', [...lobby.state.players.entries()]);
 
   if (!lobby || !lobbyList) return;
@@ -484,6 +492,9 @@ function setupRoom() {
       lastUnpausedTime = performance.now();
       resetMatch();
     },
+
+    lobbyRef: lobby,
+
   });
 
   // add self with empty name initially
@@ -1110,7 +1121,7 @@ function isHost() {
   return hostId === selfId;
 }
 
-function getActiveParticipantIds() {
+export function getActiveParticipantIds() {
   return [...participantIds].slice(0, MAX_PLAYERS);
 }
 

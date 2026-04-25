@@ -1,6 +1,10 @@
+import {gameState, lobbyRef, statusLabel, readyButton, setLocalPlayerName, getActiveParticipantIds} from '../main.js';
+import {selfId } from '@trystero-p2p/nostr';
+
 // Name input elements
 const playerNameInput = document.getElementById('player-name');
 const nameFeedback = document.getElementById('name-feedback');
+const nameSubmitBtn = document.getElementById('name-submit-btn');
 
 // Name validation and ready button logic
 let localPlayerName = '';
@@ -16,7 +20,7 @@ export function validatePlayerName(name) {
   const activeIds = getActiveParticipantIds();
   for (const id of activeIds) {
     if (id !== selfId) {
-      const player = lobby?.state.players.get(id);
+      const player = lobbyRef?.state.players.get(id);
       if (player?.name && player.name.toLowerCase() === name.toLowerCase()) {
         return { valid: false, message: 'Name already taken' };
       }
@@ -32,18 +36,51 @@ export function updateNameValidation() {
   nameFeedback.textContent = validation.message;
   nameFeedback.className = 'name-feedback ' + (validation.valid ? 'success' : 'error');
   
-  // Show ready button only if name is valid
   readyButton.style.display = validation.valid ? 'inline-block' : 'none';
-  
-  if (validation.valid) {
-    localPlayerName = name;
-    if (lobby) {
-      lobby.handleLocalName(name);
-    }
-  }
 }
 
-// Name input event listeners
-playerNameInput.addEventListener('input', updateNameValidation);
-playerNameInput.addEventListener('blur', updateNameValidation);
+export function initNameUI() {
+    // Name input event listeners
+    playerNameInput.addEventListener('input', () => {
+    updateNameValidation();
+    });
+    
+    playerNameInput.addEventListener('blur', updateNameValidation);
+}
 
+export function submitName() {
+  if (gameState.phase !== 'lobby') return;
+
+  if (!playerNameInput) return;
+  
+  if (!lobbyRef) {
+    console.warn('Lobby not ready yet');
+  //  return;
+  }
+
+  const name = playerNameInput.value.trim();
+
+  if (!name) {
+    statusLabel.textContent = 'Name cannot be empty';
+    return;
+  }
+
+  const validation = validatePlayerName(name);
+  if (!validation.valid) {
+    statusLabel.textContent = validation.message;
+    return;
+  }
+
+  setLocalPlayerName(name);
+  statusLabel.textContent = `Name set: ${name}`;
+}
+
+// Button click
+nameSubmitBtn?.addEventListener('click', submitName);
+
+// Enter key support
+playerNameInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    submitName();
+  }
+});
