@@ -11,8 +11,11 @@ export function createLobbyUI(playHud) {
     lobbyList.innerHTML =
       `<b>Phase: ${lobby.state.phase}</b><br><br>` +
       active.map(id => {
-        const ready = lobby.state.players.get(id)?.ready;
-        return `${id === selfId ? 'You' : shortId(id)}: ${ready ? '✅' : '❌'}`;
+        const player = lobby.state.players.get(id);
+        const name = player?.name || shortId(id);
+        const ready = player?.ready;
+        const displayName = id === selfId ? 'You' : name;
+        return `${displayName}: ${ready ? '✅' : '❌'}`;
       }).join('<br>');
   }
 

@@ -2,7 +2,7 @@
 
 export function createLobbyState(selfId) {
   return {
-    players: new Map(), // id -> { ready: boolean }
+    players: new Map(), // id -> { name: string, ready: boolean }
     hostId: selfId,
     phase: 'lobby', // 'lobby' | 'playing'
   };
@@ -13,10 +13,15 @@ export function setPlayerReady(state, playerId, ready) {
   state.players.set(playerId, { ...prev, ready });
 }
 
+export function setPlayerName(state, playerId, name) {
+  const prev = state.players.get(playerId) || {};
+  state.players.set(playerId, { ...prev, name });
+}
+
 export function setPlayers(state, playersArray) {
   state.players.clear();
   for (const p of playersArray) {
-    state.players.set(p.id, { ready: !!p.ready });
+    state.players.set(p.id, { name: p.name || '', ready: !!p.ready });
   }
 }
 

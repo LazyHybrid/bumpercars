@@ -27,11 +27,17 @@
             <button id="toggle-play" type="button" style="display:none">Play Game</button>
             <button id="copy-link" type="button">Copy join link</button>
             <button id="new-room" type="button">New room</button>
+            <button id="ready-btn" type="button" style="display:none">Ready</button>
           </div>
           <p class="hint">Use WASD to drive. Open the copied link in another browser to join the same arena.</p>
         </div>
         <div class="hud__card hud__card--small">
           <p class="eyebrow">Session</p>
+          <div class="name-input-group">
+            <label for="player-name">Your Name:</label>
+            <input type="text" id="player-name" maxlength="20" placeholder="Enter name">
+            <span id="name-feedback" class="name-feedback"></span>
+          </div>
           <p id="peer-count">1 player connected</p>
           <p id="status">Connecting to room...</p>
         </div>

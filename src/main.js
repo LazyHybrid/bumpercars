@@ -32,6 +32,9 @@ import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
+import { validatePlayerName } from './lobby/lobby-helpers';
+import { updateNameValidation } from './lobby/lobby-helpers';
+
 
 // =========================
 // DOM/UI References
@@ -49,11 +52,25 @@ const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
 const lobbyUI = createLobbyUI(playHud);
-const readyButton = document.createElement('button');
-readyButton.textContent = 'Ready';
-actions.appendChild(readyButton);
+const readyButton = playHud?.querySelector('#ready-btn');
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
+
+// Ready button event listener
+if (readyButton) {
+readyButton?.addEventListener('click', () => {
+  if (!lobby) return;
+
+  const name = lobby.state.players.get(selfId)?.name ?? '';
+
+  if (!validatePlayerName(name)) {
+    statusLabel.textContent = 'Enter valid name first';
+    return;
+  }
+
+  lobby.handleLocalReady(true);
+});
+}
 
 // Pause menu and timer logic
 let isPaused = false;
@@ -123,7 +140,8 @@ function resetMatch() {
   // reset ready state after match start
   if (lobby) {
     for (const id of getActiveParticipantIds()) {
-      lobby.state.players.set(id, { ready: false });
+      const player = lobby.state.players.get(id);
+      lobby.state.players.set(id, {name: player?.name ?? '', ready: false, });
     }
   }
 
@@ -287,11 +305,19 @@ function exitEditMode() {
   // requestAnimationFrame(loop);
 }
 
-toggleEditButton.addEventListener('click', () => {
-  if (!isEditMode) {
-    enterEditMode();
-  }
-});
+function safeGetPlayer(id) {
+  return lobby?.state.players.get(id) ?? {
+    name: '',
+    ready: false,
+  };
+}
+
+if (toggleEditButton) {
+  toggleEditButton.addEventListener('click', () => {
+    if (!isEditMode) enterEditMode();
+  });
+}
+
 togglePlayButton.addEventListener('click', () => {
   if (isEditMode) {
     exitEditMode();
@@ -376,6 +402,19 @@ function mapEditorLoop() {
   requestAnimationFrame(mapEditorLoop);
 }
 
+function setLocalPlayerName(name) {
+  if (!lobby) return;
+
+  const existing = lobby.state.players.get(selfId);
+
+  lobby.state.players.set(selfId, {
+    name,
+    ready: existing?.ready ?? false,
+  });
+
+  updateNameValidation(name);
+}
+
 function setupUi() {
   copyLinkButton.addEventListener('click', async () => {
     const shareLink = buildShareUrl();
@@ -394,15 +433,11 @@ function setupUi() {
     window.location.href = nextUrl.toString();
   });
 
-  readyButton.addEventListener('click', () => {
-    if (!lobby) return;
-    const current = lobby.state.players.get(selfId)?.ready ?? false;
-    lobby.handleLocalReady(!current);
-  });
-
 }
 
 function renderLobby() {
+  console.log('LOBBY STATE', [...lobby.state.players.entries()]);
+
   if (!lobby || !lobbyList) return;
 
   const active = getActiveParticipantIds();
@@ -451,8 +486,8 @@ function setupRoom() {
     },
   });
 
-  // add self
-  lobby.state.players.set(selfId, { ready: false });
+  // add self with empty name initially
+  lobby.state.players.set(selfId, {name: lobby.state.players.get(selfId)?.name || '', ready: false, });  
   gameState.phase = 'lobby';
 
   refreshHostRole();
@@ -565,6 +600,7 @@ function setupRoom() {
 
   receiveLobby((payload, peerId) => {
     if (!lobby) return;
+    if (!payload || typeof payload !== 'object') return;
     lobby.handleMessage(payload, peerId);
   });
 
@@ -735,14 +771,41 @@ function updateHpBar() {
   hpBarFill.style.width = (percent * 100) + '%';
 }
 
+function updateUIVisibility() {
+  const isLobby = gameState.phase === 'lobby';
+  const nameInputGroup = document.querySelector('.name-input-group');
+  const player = lobby?.state.players.get(selfId);
+  const hasValidName = player && validatePlayerName(player.name);
+
+  readyButton.style.display = gameState.phase === 'lobby' && hasValidName ? 'block' : 'none';
+
+  if (nameInputGroup) {
+    nameInputGroup.style.display = isLobby ? 'block' : 'none';
+  }
+  
+  // Ready button visibility is handled by name validation
+  // But hide it completely when not in lobby
+  if (!isLobby) {
+    readyButton.style.display = 'none';
+  }
+  // Note: ready button visibility when in lobby is handled by updateNameValidation
+}
+
 function loop() {
 
   try {
   //console.log('loop tick'); // For debugging freezes or performance issues
 
-  lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
-
-  renderLobby();
+  updateUIVisibility();
+  
+  if (lobbyUI) {
+    lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
+  }
+  try {
+    lobbyUI?.render?.(lobby, selfId, getActiveParticipantIds, shortId);
+  } catch (e) {
+    console.warn('Lobby UI render failed:', e);
+  }
 
   if (lobby) {
     //console.log('LOBBY PHASE:', lobby.state.phase); // Debugging lobby phase issues

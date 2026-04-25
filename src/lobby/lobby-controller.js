@@ -3,6 +3,7 @@
 import {
   createLobbyState,
   setPlayerReady,
+  setPlayerName,
   setPlayers,
   allPlayersReady,
 } from './lobby-state';
@@ -26,6 +27,15 @@ export function createLobbyController({
     }
   }
 
+  function handleLocalName(name) {
+    setPlayerName(state, selfId, name);
+    if (isHost()) {
+      broadcastState();
+    } else {
+      sendLobby({ type: 'name', name });
+    }
+  }
+
   function handleMessage(payload, peerId) {
     if (!payload) return;
 
@@ -35,6 +45,13 @@ export function createLobbyController({
       setPlayerReady(state, peerId, payload.ready);
       broadcastState();
       maybeStart();
+    }
+
+    if (payload.type === 'name') {
+      if (!isHost()) return;
+
+      setPlayerName(state, peerId, payload.name);
+      broadcastState();
     }
 
     if (payload.type === 'state') {
@@ -61,6 +78,7 @@ export function createLobbyController({
 
     const players = getActiveParticipantIds().map(id => ({
       id,
+      name: state.players.get(id)?.name || '',
       ready: state.players.get(id)?.ready ?? false,
     }));
 
@@ -92,6 +110,7 @@ export function createLobbyController({
   return {
     state,
     handleLocalReady,
+    handleLocalName,
     handleMessage,
   };
 }
