@@ -1,7 +1,11 @@
 // src/lobby/lobby-controller.js
 
 import { createLobbyState, setPlayerReady, setPlayerName, setPlayers, allPlayersReady,} from './lobby-state';
-import { renderLobby } from '../main.js';
+import { renderLobby, statusLabel } from '../main.js';
+import { validatePlayerName } from './lobby-helpers.js';
+
+const nameFeedback = document.getElementById('name-feedback');
+
 
 export function createLobbyController({
   selfId,
@@ -26,8 +30,18 @@ export function createLobbyController({
   }
 
   function handleLocalName(name) {
+    console.log('Setting local name to:', name);
+
+    const validation = validatePlayerName(name);
+
+    if (!validation.valid) {
+      console.warn(validation.message);
+      return;
+    }
+    
     setPlayerName(state, selfId, name);
     onStateChange?.();
+    
     if (isHost()) {
       broadcastState();
     } else {
@@ -48,9 +62,29 @@ export function createLobbyController({
     }
 
     if (payload.type === 'name') {
-      if (!isHost()) return;
+      //if (!isHost()) return;
 
-      setPlayerName(state, peerId, payload.name);
+      const name = payload.name?.trim().toLowerCase();
+
+      // Check duplicates
+      const normalized = payload.name?.trim().toLowerCase();
+
+      const alreadyTaken = Array.from(state.players.values())
+        .map(p => p.name?.trim().toLowerCase())
+        .filter(Boolean) // remove empty names
+        .includes(normalized);
+
+      if (alreadyTaken) {
+        // Reject silently OR notify
+        sendLobby({
+          type: 'name-rejected',
+          reason: 'Name already taken'
+        }, peerId);
+        return;
+      }
+
+      statusLabel.style.color = 'none';
+      setPlayerName(state, peerId, payload.name.trim());
       onStateChange?.();
       broadcastState();
     }
@@ -72,6 +106,14 @@ export function createLobbyController({
       state.phase = 'playing';
       onStartGame();
     }
+
+    if (payload.type === 'name-rejected') {
+      if (payload.type === 'name-rejected') {
+        nameFeedback.textContent = "Name already taken";
+        nameFeedback.className = 'name-feedback error';
+      }
+    }
+
   }
 
   function broadcastState() {

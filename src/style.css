@@ -355,6 +355,7 @@ body {
   backdrop-filter: blur(16px);
   box-shadow: 0 16px 40px rgba(18, 72, 95, 0.18);
   pointer-events: auto;
+  margin-bottom: 1rem;
 }
 
 .hud__card--small {
@@ -561,18 +562,19 @@ button:last-child {
 
 /* Name Input Styles */
 .name-input-group {
-  margin-bottom: 1em;
+  margin-bottom: 1rem;
 }
 
 .name-input-group label {
   display: block;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #ccc;
+  color: #444;
   margin-bottom: 0.3em;
 }
 
 .name-input-group input {
+  padding-bottom: 1rem;
   width: 100%;
   padding: 0.5em;
   font-size: 1rem;

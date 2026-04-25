@@ -61,13 +61,16 @@ export function submitName() {
   const name = playerNameInput.value.trim();
 
   if (!name) {
-    statusLabel.textContent = 'Name cannot be empty';
+    nameFeedback.textContent = 'Name cannot be empty';
+    nameFeedback.className = 'name-feedback error';
     return;
   }
 
   const validation = validatePlayerName(name);
   if (!validation.valid) {
-    statusLabel.textContent = validation.message;
+    nameFeedback.textContent = validation.message;
+    nameFeedback.className = 'name-feedback error';
+    //statusLabel.textContent = validation.message;
     return;
   }
 
