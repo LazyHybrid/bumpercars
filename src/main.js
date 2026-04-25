@@ -485,7 +485,13 @@ function setupRoom() {
     getActiveParticipantIds,
     sendLobby,
     onStartGame: () => {
-      statusLabel.textContent = 'Game started!';
+     
+      if (isHost()) {
+          statusLabel.textContent = 'Game started! \n You are the host.';
+        } else {
+          statusLabel.textContent = `Game started!`;
+        }
+
       gameState.phase = 'playing';
 
       matchTime = 0;
