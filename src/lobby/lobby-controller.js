@@ -50,6 +50,11 @@ export function createLobbyController({
   function broadcastState() {
     if (!isHost()) return;
 
+    if (typeof sendLobby !== 'function') {
+      console.warn('sendLobby not ready');
+      return;
+    }
+
     const players = getActiveParticipantIds().map(id => ({
       id,
       ready: state.players.get(id)?.ready ?? false,
@@ -67,7 +72,6 @@ export function createLobbyController({
     const active = getActiveParticipantIds();
 
     if (allPlayersReady(state, active)) {
-      sendLobby({ type: 'start' });
       state.phase = 'playing';
       onStartGame();
     }
