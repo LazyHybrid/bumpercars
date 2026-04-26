@@ -11,6 +11,7 @@ export function renderLobbyUI(gameState, context) {
 
   show("#lobby-list");
   show(".hud__card");
+  show(".hud__actions");
   show("#toggle-play");
   show(".name-input-group");
 

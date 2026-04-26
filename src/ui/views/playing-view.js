@@ -8,6 +8,7 @@ export function renderPlayingUI(gameState) {
 
   hide('#toggle-play')
   hide('.name-input-group')
+  hide('.hud__actions')
 
   show('#global-match-timer')
   show('#score-display')
