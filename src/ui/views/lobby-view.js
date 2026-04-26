@@ -1,0 +1,16 @@
+export function renderLobbyUI(gameState) {
+  document.body.dataset.state = 'lobby'
+
+  show('#lobby-list')
+  show('.hud__card')
+  show('#toggle-play')
+  show('.name-input-group')
+
+  hide('#global-match-timer')
+  hide('#score-display')
+  hide('#hp-bar-container')
+}
+
+export function cleanupLobbyUI() {
+  // placeholder if any cleanup needed when leaving lobby phase
+}

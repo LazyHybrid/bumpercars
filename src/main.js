@@ -33,6 +33,7 @@ import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
 import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
+import { renderUI } from './ui/state-renderer.js';
 
 // =========================
 // DOM/UI References
@@ -90,7 +91,7 @@ export function setLobbyRef(lobby) {
 
 // Game state
 export const gameState = {
-  phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'ended'
+  phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'endgame'
 };
 
 
