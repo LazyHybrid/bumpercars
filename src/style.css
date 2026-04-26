@@ -355,10 +355,23 @@ body {
   backdrop-filter: blur(16px);
   box-shadow: 0 16px 40px rgba(18, 72, 95, 0.18);
   pointer-events: auto;
+  margin-bottom: 1rem;
 }
 
 .hud__card--small {
   max-width: 13rem;
+}
+
+#lobby-list {
+  max-width: 13rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 40px rgba(18, 72, 95, 0.18);
+  pointer-events: auto;
+  margin-bottom: 1rem;
 }
 
 .eyebrow {
@@ -557,4 +570,54 @@ button:last-child {
   .hud__actions {
     flex-direction: column;
   }
+}
+
+/* Name Input Styles */
+.name-input-group {
+  margin-bottom: 1rem;
+}
+
+.name-input-group label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.3em;
+}
+
+.name-input-group input {
+  padding-bottom: 1rem;
+  width: 100%;
+  padding: 0.5em;
+  font-size: 1rem;
+  border: 2px solid #555;
+  border-radius: 6px;
+  background: #eee;
+  color: #555;
+  box-sizing: border-box;
+}
+
+.name-input-group input:focus {
+  outline: none;
+  border-color: #3f51b5;
+  box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.2);
+}
+
+.name-input-group input::placeholder {
+  color: #888;
+}
+
+.name-feedback {
+  display: block;
+  font-size: 0.8rem;
+  margin-top: 0.3em;
+  min-height: 1em;
+}
+
+.name-feedback.error {
+  color: #f44336;
+}
+
+.name-feedback.success {
+  color: #4caf50;
 }

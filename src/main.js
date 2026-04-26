@@ -30,6 +30,10 @@ import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
+import { createLobbyController } from './lobby/lobby-controller';
+import { createLobbyUI } from './ui/lobby-ui';
+import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
+import { renderUI } from './ui/state-renderer.js';
 
 // =========================
 // DOM/UI References
@@ -41,13 +45,31 @@ const eyebrowLabel = playHud.querySelector('.eyebrow');
 const titleLabel = playHud.querySelector('h1');
 const roomLabel = playHud.querySelector('#room-label');
 const peerCountLabel = playHud.querySelector('#peer-count');
-const statusLabel = playHud.querySelector('#status');
+export const statusLabel = playHud.querySelector('#status');
 const copyLinkButton = playHud.querySelector('#copy-link');
 const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
+export const lobbyUI = createLobbyUI(playHud);
+export const readyButton = playHud?.querySelector('#ready-btn');
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
+
+// Ready button event listener
+if (readyButton) {
+readyButton?.addEventListener('click', () => {
+  if (!lobby) return;
+
+  const name = lobby.state.players.get(selfId)?.name ?? '';
+
+  if (!validatePlayerName(name).valid) {
+    statusLabel.textContent = 'Enter valid name first';
+    return;
+  }
+
+  lobby.handleLocalReady(true);
+});
+}
 
 // Pause menu and timer logic
 let isPaused = false;
@@ -58,6 +80,19 @@ const resumeBtn = document.getElementById('resume-btn');
 const matchTimerDisplay = document.getElementById('match-timer');
 const globalMatchTimer = document.getElementById('global-match-timer');
 const newMatchBtn = document.getElementById('new-match-btn');
+
+// Lobby list container
+const lobbyList = document.getElementById('lobby-list');
+export let lobbyRef = null;
+
+export function setLobbyRef(lobby) {
+  lobbyRef = lobby;
+}
+
+// Game state
+export const gameState = {
+  phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'endgame'
+};
 
 
 if (newMatchBtn) {
@@ -105,6 +140,15 @@ function resetMatch() {
   updateHpBar();
   updateScoreDisplay();
   updateMatchTimerDisplay();
+
+  // reset ready state after match start
+  if (lobby) {
+    for (const id of getActiveParticipantIds()) {
+      const player = lobby.state.players.get(id);
+      lobby.state.players.set(id, {name: player?.name ?? '', ready: false, });
+    }
+  }
+
 }
 
 function formatTime(secs) {
@@ -178,6 +222,9 @@ let receiveInput = null;
 let receiveSnapshot = null;
 let sendMap = null;
 let receiveMap = null;
+let sendLobby = null;
+let receiveLobby = null;
+let lobby = null;
 let roomId = '';
 let hostId = selfId;
 let simulationAccumulator = 0;
@@ -259,16 +306,28 @@ function exitEditMode() {
   // Resume play controls and loop
   world.add(localPlayer.group);
   setupInput(keys);
-  requestAnimationFrame(loop);
+  // requestAnimationFrame(loop);
 }
 
-toggleEditButton.addEventListener('click', () => {
-  if (!isEditMode) {
-    enterEditMode();
-  }
-});
+function safeGetPlayer(id) {
+  return lobby?.state.players.get(id) ?? {
+    name: '',
+    ready: false,
+  };
+}
+
+if (toggleEditButton) {
+  toggleEditButton.addEventListener('click', () => {
+    if (!isEditMode) {
+      gameState.phase = 'editing';
+      enterEditMode();
+    }
+  });
+}
+
 togglePlayButton.addEventListener('click', () => {
   if (isEditMode) {
+    gameState.phase = 'playing';
     exitEditMode();
   }
 });
@@ -278,6 +337,7 @@ world.add(localPlayer.group);
 setupInput(keys);
 setupRoom();
 setupUi();
+initNameUI();
 window.addEventListener('resize', handleResize);
 requestAnimationFrame(loop);
 
@@ -351,7 +411,20 @@ function mapEditorLoop() {
   requestAnimationFrame(mapEditorLoop);
 }
 
+export function setLocalPlayerName(name) {
+  if (!lobby) return;
+
+  const existing = lobby.state.players.get(selfId);
+  
+  lobby.handleLocalName(name);
+
+  updateNameValidation(name);
+}
+
 function setupUi() {
+
+  submitName();
+
   copyLinkButton.addEventListener('click', async () => {
     const shareLink = buildShareUrl();
 
@@ -368,9 +441,16 @@ function setupUi() {
     nextUrl.searchParams.set('room', createRoomId());
     window.location.href = nextUrl.toString();
   });
+
 }
 
 function setupRoom() {
+  console.log('sendLobby:', sendLobby);
+
+  if (lobby) {
+    lobby.state.players.set(selfId, { ready: false });
+  }
+
   roomId = ensureRoomId();
   roomLabel.textContent = `Room: ${roomId}`;
 
@@ -383,6 +463,40 @@ function setupRoom() {
   [sendInput, receiveInput] = room.makeAction('input');
   [sendSnapshot, receiveSnapshot] = room.makeAction('snapshot');
   [sendMap, receiveMap] = room.makeAction('map');
+  [sendLobby, receiveLobby] = room.makeAction('lobby');
+
+  lobby = createLobbyController({
+    selfId,
+    isHost,
+    getActiveParticipantIds,
+    sendLobby,
+    onStartGame: () => {
+     
+      if (isHost()) {
+          statusLabel.textContent = 'Game started! \n You are the host.';
+        } else {
+          statusLabel.textContent = `Game started!`;
+        }
+
+      // Update lobby UI with final player statuses before starting game
+      if (lobby) {
+        lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
+      }
+
+      gameState.phase = 'playing';
+
+      matchTime = 0;
+      lastUnpausedTime = performance.now();
+      resetMatch();
+    },
+
+    lobbyRef: lobby,
+
+  });
+
+  // add self with empty name initially
+  lobby.state.players.set(selfId, {name: lobby.state.players.get(selfId)?.name || '', ready: false, });  
+  gameState.phase = 'lobby';
 
   refreshHostRole();
   updatePeerCount();
@@ -404,6 +518,23 @@ function setupRoom() {
     } else if (!isHost() && isPeerActive(selfId)) {
       sendInputPacket(true);
     }
+
+    // Sync lobby state to new peer
+    if (isHost() && lobby) {
+      lobby.state.players.set(peerId, { ready: false });
+
+      const players = getActiveParticipantIds().map(id => ({
+        id,
+        ready: lobby.state.players.get(id)?.ready ?? false,
+      }));
+
+      sendLobby({
+        type: 'state',
+        phase: lobby.state.phase,
+        players,
+      }, peerId);
+    }
+
   });
 
   room.onPeerLeave((peerId) => {
@@ -430,11 +561,18 @@ function setupRoom() {
     const player = ensureRemotePlayerWithLife(remotePlayers, world, peerId, getSpawnPoint(peerId));
     player.input = normalizeInput(payload);
     player.lastSeenAt = performance.now();
+
   });
 
   receiveSnapshot((payload, peerId) => {
+
     if (!payload || !Array.isArray(payload.players)) {
       return;
+    }
+
+    if (payload.phase) {
+      lobby.state.phase = payload.phase;
+      gameState.phase = payload.phase;
     }
 
     participantIds.add(peerId);
@@ -467,6 +605,16 @@ function setupRoom() {
 
     applyAuthoritativeMap(payload.map);
   });
+
+  receiveLobby((payload, peerId) => {
+    if (!lobby) return;
+    if (!payload || typeof payload !== 'object') return;
+    lobby.handleMessage(payload, peerId);
+  });
+
+  playHud.style.display = 'block';
+  pauseMenu.style.display = 'none';
+
 }
 
 function ensureRoomId() {
@@ -585,7 +733,11 @@ function sendSnapshotPacket(targetPeers) {
 
   sendSnapshot({
     hostId: selfId,
+
+    phase: lobby?.state.phase ?? 'playing',
+
     matchTime,
+
     players: getAllPlayers().map((player) => ({
       id: player.id,
       x: player.position.x,
@@ -593,7 +745,11 @@ function sendSnapshotPacket(targetPeers) {
       heading: player.heading,
       vx: player.velocity.x,
       vz: player.velocity.y,
-    })),
+
+      ready: lobby?.state.players.get(player.id)?.ready ?? false,
+      score: player.score ?? 0,
+      alive: playerLives[player.id]?.isAlive?.() ?? true,
+    }))
   }, targetPeers);
 }
 
@@ -623,7 +779,46 @@ function updateHpBar() {
   hpBarFill.style.width = (percent * 100) + '%';
 }
 
+function updateUIVisibility() {
+  const isLobby = gameState.phase === 'lobby';
+  const nameInputGroup = document.querySelector('.name-input-group');
+  const player = lobby?.state.players.get(selfId);
+
+  /*
+  if (validatePlayerName(player?.name).valid) {
+  readyButton.style.display = gameState.phase === 'lobby' && hasValidName ? 'block' : 'none';
+  }*/
+
+  if (nameInputGroup) {
+    nameInputGroup.style.display = isLobby ? 'block' : 'none';
+  }
+  
+  // Ready button visibility is handled by name validation
+  // But hide it completely when not in lobby
+  if (!isLobby) {
+    readyButton.style.display = 'none';
+  }
+  
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === '1') gameState.phase = 'lobby';
+  if (e.key === '2') gameState.phase = 'playing';
+  if (e.key === '3') gameState.phase = 'endgame';
+});
+
 function loop() {
+
+  try {
+  
+  renderUI(gameState, { lobby, playHud, selfId, shortId, getActiveParticipantIds, lobbyUI});
+
+  // LOBBY GATING
+  if (gameState.phase !== 'playing') {
+    world.render();
+    requestAnimationFrame(loop);
+    return;
+  }
   updateScoreDisplay();
   updateMatchTimerDisplay();
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
@@ -636,6 +831,7 @@ function loop() {
     }
     lastUnpausedTime = performance.now();
 
+    // Host loop
     if (isHost()) {
       localPlayer.input = readCurrentInputState(keys);
       simulationAccumulator += delta;
@@ -717,6 +913,10 @@ function loop() {
 
   world.render();
   requestAnimationFrame(loop);
+
+  } catch (err) {
+  console.error('LOOP ERROR:', err);
+}
 }
 
 function updatePredictedLocalPlayer(delta) {
@@ -818,7 +1018,9 @@ function simulateAuthoritativeStep(delta) {
   });
 
   for (const player of players) {
-    const input = player.isLocal ? readCurrentInputState(keys) : player.input;
+    const input = player.isLocal
+      ? readCurrentInputState(keys)
+      : (player.input ?? { forward: false, backward: false, left: false, right: false, strafeLeft: false, strafeRight: false });
     simulateMovement(player, input, delta);
     resolveArenaCollision(player);
     resolveMapWallCollisions(player);
@@ -854,6 +1056,15 @@ function applySnapshot(playerStates) {
       playerState.id,
       { x: playerState.x, y: playerState.z }
     );
+
+    // FORCE spawn sync from host
+    if (!player.hasSpawned) {
+      player.position.set(playerState.x, playerState.z);
+      player.targetPosition.copy(player.position);
+      player.hasSpawned = true;
+    }
+
+    if (!player) return; // this causes more problems
 
     const positionError = player.position.distanceTo(new Vec2(playerState.x, playerState.z));
     const velocityError = player.velocity.distanceTo(new Vec2(playerState.vx, playerState.vz));
@@ -902,7 +1113,7 @@ function isHost() {
   return hostId === selfId;
 }
 
-function getActiveParticipantIds() {
+export function getActiveParticipantIds() {
   return [...participantIds].slice(0, MAX_PLAYERS);
 }
 
