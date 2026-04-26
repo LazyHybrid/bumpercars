@@ -362,6 +362,18 @@ body {
   max-width: 13rem;
 }
 
+#lobby-list {
+  max-width: 13rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 16px 40px rgba(18, 72, 95, 0.18);
+  pointer-events: auto;
+  margin-bottom: 1rem;
+}
+
 .eyebrow {
   margin: 0 0 0.35rem;
   font-size: 0.72rem;

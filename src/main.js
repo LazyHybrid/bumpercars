@@ -61,7 +61,7 @@ readyButton?.addEventListener('click', () => {
 
   const name = lobby.state.players.get(selfId)?.name ?? '';
 
-  if (!validatePlayerName(name)) {
+  if (!validatePlayerName(name).valid) {
     statusLabel.textContent = 'Enter valid name first';
     return;
   }
@@ -792,9 +792,11 @@ function updateUIVisibility() {
   const isLobby = gameState.phase === 'lobby';
   const nameInputGroup = document.querySelector('.name-input-group');
   const player = lobby?.state.players.get(selfId);
-  const hasValidName = player && validatePlayerName(player.name);
 
+  /*
+  if (validatePlayerName(player?.name).valid) {
   readyButton.style.display = gameState.phase === 'lobby' && hasValidName ? 'block' : 'none';
+  }*/
 
   if (nameInputGroup) {
     nameInputGroup.style.display = isLobby ? 'block' : 'none';
@@ -805,7 +807,7 @@ function updateUIVisibility() {
   if (!isLobby) {
     readyButton.style.display = 'none';
   }
-  // Note: ready button visibility when in lobby is handled by updateNameValidation
+  
 }
 
 function loop() {

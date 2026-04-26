@@ -2,7 +2,7 @@
 
 import { createLobbyState, setPlayerReady, setPlayerName, setPlayers, allPlayersReady,} from './lobby-state';
 import { renderLobby, statusLabel } from '../main.js';
-import { validatePlayerName } from './lobby-helpers.js';
+import { updateNameValidation, validatePlayerName } from './lobby-helpers.js';
 
 const nameFeedback = document.getElementById('name-feedback');
 
@@ -14,7 +14,8 @@ export function createLobbyController({
   sendLobby,
   onStartGame,
   onStateChange = () => {
-    renderLobby(); // TAI lobbyUI.render(...)
+    renderLobby(); 
+    updateNameValidation();
   }
 }) {
   const state = createLobbyState(selfId);
@@ -41,7 +42,7 @@ export function createLobbyController({
     
     setPlayerName(state, selfId, name);
     onStateChange?.();
-    
+
     if (isHost()) {
       broadcastState();
     } else {

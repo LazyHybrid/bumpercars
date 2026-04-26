@@ -9,7 +9,7 @@ export function createLobbyUI(playHud) {
     const active = getActiveParticipantIds();
 
     lobbyList.innerHTML =
-      `<b>Phase: ${lobby.state.phase}</b><br><br>` +
+      `<b><p class="eyebrow">Players:</p>` +
       active.map(id => {
         const player = lobby.state.players.get(id);
         const name = player?.name || shortId(id);

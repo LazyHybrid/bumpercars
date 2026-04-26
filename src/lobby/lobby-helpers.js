@@ -10,6 +10,7 @@ const nameSubmitBtn = document.getElementById('name-submit-btn');
 let localPlayerName = '';
 
 export function validatePlayerName(name) {
+
   if (!name || name.trim().length === 0) {
     return { valid: false, message: 'Name cannot be empty' };
   }
@@ -21,7 +22,7 @@ export function validatePlayerName(name) {
   for (const id of activeIds) {
     if (id !== selfId) {
       const player = lobbyRef?.state.players.get(id);
-      if (player?.name && player.name.toLowerCase() === name.toLowerCase()) {
+      if (player?.name && (player.name.toLowerCase() === name.toLowerCase())) {
         return { valid: false, message: 'Name already taken' };
       }
     }
@@ -32,11 +33,12 @@ export function validatePlayerName(name) {
 export function updateNameValidation() {
   const name = playerNameInput.value.trim();
   const validation = validatePlayerName(name);
+  //console.log('Name validation from updateNameValidation:', validation);
   
   nameFeedback.textContent = validation.message;
   nameFeedback.className = 'name-feedback ' + (validation.valid ? 'success' : 'error');
   
-  readyButton.style.display = validation.valid ? 'inline-block' : 'none';
+  //readyButton.style.display = validation.valid ? 'inline-block' : 'none';
 }
 
 export function initNameUI() {
@@ -68,22 +70,32 @@ export function submitName() {
 
   const validation = validatePlayerName(name);
   if (!validation.valid) {
+    //console.log("Name validation failed:", validation.message);
     nameFeedback.textContent = validation.message;
     nameFeedback.className = 'name-feedback error';
-    //statusLabel.textContent = validation.message;
+    statusLabel.textContent = '';
     return;
   }
 
+  //console.log('Name validation passed:', validation.message);
   setLocalPlayerName(name);
   statusLabel.textContent = `Name set: ${name}`;
 }
 
 // Button click
-nameSubmitBtn?.addEventListener('click', submitName);
+nameSubmitBtn?.addEventListener('click', () => {
+    const validation = validatePlayerName(playerNameInput.value.trim());
+    const readyButton = document.getElementById('ready-btn');
+    readyButton.style.display = validation.valid ? 'inline-block' : 'none';
+    submitName();
+});
 
 // Enter key support
 playerNameInput?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
+    const validation = validatePlayerName(playerNameInput.value.trim());
+    const readyButton = document.getElementById('ready-btn');
+    readyButton.style.display = validation.valid ? 'inline-block' : 'none';
     submitName();
   }
 });
