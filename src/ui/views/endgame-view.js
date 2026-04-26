@@ -1,3 +1,5 @@
+import { show, hide } from '../dom.js';
+
 export function renderEndgameUI(gameState) {
   document.body.dataset.state = 'endgame'
 

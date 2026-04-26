@@ -1,14 +1,22 @@
-export function renderLobbyUI(gameState) {
-  document.body.dataset.state = 'lobby'
+import { show, hide } from "../dom.js";
 
-  show('#lobby-list')
-  show('.hud__card')
-  show('#toggle-play')
-  show('.name-input-group')
+export function renderLobbyUI(gameState, context) {
+  document.body.dataset.state = 'lobby';
 
-  hide('#global-match-timer')
-  hide('#score-display')
-  hide('#hp-bar-container')
+  const { lobby, playHud, selfId, shortId, getActiveParticipantIds, lobbyUI } = context;
+
+  if (!lobby || !lobbyUI) return;
+
+  lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
+
+  show("#lobby-list");
+  show(".hud__card");
+  show("#toggle-play");
+  show(".name-input-group");
+
+  hide("#global-match-timer");
+  hide("#score-display");
+  hide("#hp-bar-container");
 }
 
 export function cleanupLobbyUI() {

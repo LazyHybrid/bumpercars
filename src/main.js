@@ -50,7 +50,7 @@ const copyLinkButton = playHud.querySelector('#copy-link');
 const newRoomButton = playHud.querySelector('#new-room');
 const hintLabel = playHud.querySelector('.hint');
 const actions = playHud.querySelector('.hud__actions');
-const lobbyUI = createLobbyUI(playHud);
+export const lobbyUI = createLobbyUI(playHud);
 export const readyButton = playHud?.querySelector('#ready-btn');
 const toggleEditButton = playHud.querySelector('#toggle-edit');
 const togglePlayButton = playHud.querySelector('#toggle-play');
@@ -224,7 +224,7 @@ let sendMap = null;
 let receiveMap = null;
 let sendLobby = null;
 let receiveLobby = null;
-export let lobby = null;
+let lobby = null;
 let roomId = '';
 let hostId = selfId;
 let simulationAccumulator = 0;
@@ -444,21 +444,6 @@ function setupUi() {
 
 }
 
-export function renderLobby() {
-  console.log('LOBBY STATE', [...lobby.state.players.entries()]);
-
-  if (!lobby || !lobbyList) return;
-
-  const active = getActiveParticipantIds();
-
-  lobbyList.innerHTML =
-    `<b>Phase: ${lobby.state.phase}</b><br><br>` +
-    active.map(id => {
-      const ready = lobby.state.players.get(id)?.ready;
-      return `${id === selfId ? 'You' : shortId(id)}: ${ready ? '✅' : '❌'}`;
-    }).join('<br>');
-}
-
 function setupRoom() {
   console.log('sendLobby:', sendLobby);
 
@@ -492,6 +477,11 @@ function setupRoom() {
         } else {
           statusLabel.textContent = `Game started!`;
         }
+
+      // Update lobby UI with final player statuses before starting game
+      if (lobby) {
+        lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
+      }
 
       gameState.phase = 'playing';
 
@@ -811,25 +801,18 @@ function updateUIVisibility() {
   
 }
 
+window.addEventListener('keydown', (e) => {
+  if (e.key === '1') gameState.phase = 'lobby';
+  if (e.key === '2') gameState.phase = 'playing';
+  if (e.key === '3') gameState.phase = 'endgame';
+});
+
 function loop() {
 
   try {
-  //console.log('loop tick'); // For debugging freezes or performance issues
-
-  updateUIVisibility();
   
-  if (lobbyUI) {
-    lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
-  }
-  try {
-    lobbyUI?.render?.(lobby, selfId, getActiveParticipantIds, shortId);
-  } catch (e) {
-    console.warn('Lobby UI render failed:', e);
-  }
+  renderUI(gameState, { lobby, playHud, selfId, shortId, getActiveParticipantIds, lobbyUI});
 
-  if (lobby) {
-    //console.log('LOBBY PHASE:', lobby.state.phase); // Debugging lobby phase issues
-  }
   // LOBBY GATING
   if (gameState.phase !== 'playing') {
     world.render();

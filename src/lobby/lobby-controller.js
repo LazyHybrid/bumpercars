@@ -1,28 +1,40 @@
 // src/lobby/lobby-controller.js
 
 import { createLobbyState, setPlayerReady, setPlayerName, setPlayers, allPlayersReady,} from './lobby-state';
-import { renderLobby, statusLabel } from '../main.js';
+import { statusLabel, gameState, lobbyUI } from '../main.js';
 import { updateNameValidation, validatePlayerName } from './lobby-helpers.js';
+import { renderUI } from '../ui/state-renderer.js';
+import { shortId } from '../game/utils.js';
 
 const nameFeedback = document.getElementById('name-feedback');
+const playHud = document.getElementById('play-hud');
 
+let lobby = null;
 
 export function createLobbyController({
   selfId,
   isHost,
   getActiveParticipantIds,
   sendLobby,
-  onStartGame,
+  onStartGame = () => {
+    gameState.phase = 'playing';
+  },
   onStateChange = () => {
-    renderLobby(); 
-    updateNameValidation();
-  }
+    renderUI(gameState, {
+      lobby,
+      playHud,
+      selfId,
+      shortId,
+      getActiveParticipantIds
+    });
+  },
 }) {
   const state = createLobbyState(selfId);
 
   function handleLocalReady(ready) {
     if (isHost()) {
       setPlayerReady(state, selfId, ready);
+      lobbyUI.render({ state }, selfId, getActiveParticipantIds, shortId);
       broadcastState();
       maybeStart();
     } else {
@@ -41,6 +53,7 @@ export function createLobbyController({
     }
     
     setPlayerName(state, selfId, name);
+    lobbyUI.render({ state }, selfId, getActiveParticipantIds, shortId);
     onStateChange?.();
 
     if (isHost()) {

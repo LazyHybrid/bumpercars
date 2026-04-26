@@ -1,3 +1,5 @@
+import { show, hide } from '../dom.js';
+
 export function renderPlayingUI(gameState) {
   document.body.dataset.state = 'playing'
 

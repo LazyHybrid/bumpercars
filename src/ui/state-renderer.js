@@ -6,25 +6,27 @@ import { renderEndgameUI } from './views/endgame-view.js'
 
 let currentPhase = null
 
-export function renderUI(gameState) {
-  const nextPhase = gameState.phase
+export function renderUI(gameState, context) {
+  const phase = gameState.phase
 
-  if (nextPhase === currentPhase) return
+  if (phase !== currentPhase) {
+    // cleanup previous
+    switch (currentPhase) {
+      case 'lobby':
+        cleanupLobbyUI()
+        break
+      case 'playing':
+        cleanupPlayingUI()
+        break
+    }
 
-  // cleanup previous
-  switch (currentPhase) {
-    case 'lobby':
-      cleanupLobbyUI()
-      break
-    case 'playing':
-      cleanupPlayingUI()
-      break
+    currentPhase = phase
   }
 
-  // render next
-  switch (nextPhase) {
+  // render current
+  switch (phase) {
     case 'lobby':
-      renderLobbyUI(gameState)
+      renderLobbyUI(gameState, context)
       break
 
     case 'playing':
@@ -35,6 +37,4 @@ export function renderUI(gameState) {
       renderEndgameUI(gameState)
       break
   }
-
-  currentPhase = nextPhase
 }
