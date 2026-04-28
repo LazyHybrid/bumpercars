@@ -18,7 +18,7 @@ import {
   SNAPSHOT_VELOCITY_SNAP_DELTA,
   TURN_CREDENTIAL,
   TURN_URLS,
-  TURN_USERNAME,
+  TURN_USERNAME
 } from './game/config';
 import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
 import { MAP_WORLD_SIZE, MAP_CELL_SIZE } from './game/map-data';
@@ -71,12 +71,8 @@ readyButton?.addEventListener('click', () => {
 });
 }
 
-// Pause menu and timer logic
-let isPaused = false;
+import { initPauseMenu, setPaused, getPaused, getLastUnpausedTime, setLastUnpausedTime, setupPauseNetworking } from './game/pause.js';
 let matchTime = 0;
-let lastUnpausedTime = performance.now();
-const pauseMenu = document.getElementById('pause-menu');
-const resumeBtn = document.getElementById('resume-btn');
 const matchTimerDisplay = document.getElementById('match-timer');
 const globalMatchTimer = document.getElementById('global-match-timer');
 const newMatchBtn = document.getElementById('new-match-btn');
@@ -93,6 +89,7 @@ export function setLobbyRef(lobby) {
 export const gameState = {
   phase: 'lobby', // 'lobby' | 'playing' | 'editing' | 'paused' | 'endgame'
 };
+
 
 
 if (newMatchBtn) {
@@ -112,7 +109,7 @@ function resetMatch() {
   if (!isHost()) return;
   // Reset life, score, timer, and respawn all players at spawn
   matchTime = 0;
-  lastUnpausedTime = performance.now();
+  setLastUnpausedTime(performance.now());
   // Local player
   playerLives[selfId].reset(INITIAL_LIFE);
   localPlayer.score = 0;
@@ -148,7 +145,6 @@ function resetMatch() {
       lobby.state.players.set(id, {name: player?.name ?? '', ready: false, });
     }
   }
-
 }
 
 function formatTime(secs) {
@@ -162,16 +158,10 @@ function updateMatchTimerDisplay() {
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
 }
 
-function setPaused(paused) {
-  isPaused = paused;
-  pauseMenu.style.display = paused ? 'flex' : 'none';
-  if (!paused) lastUnpausedTime = performance.now();
-}
 
-resumeBtn.addEventListener('click', () => setPaused(false));
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') setPaused(!isPaused);
-});
+
+// Initialize pause menu logic BEFORE networking
+initPauseMenu();
 
 
 
@@ -333,6 +323,7 @@ togglePlayButton.addEventListener('click', () => {
 });
 
 // Start in play mode
+
 world.add(localPlayer.group);
 setupInput(keys);
 setupRoom();
@@ -340,8 +331,6 @@ setupUi();
 initNameUI();
 window.addEventListener('resize', handleResize);
 requestAnimationFrame(loop);
-
-
 
 function startMapEditor(editorHudContainer) {
   // Clear previous editor HUD
@@ -436,11 +425,17 @@ function setupUi() {
     }
   });
 
-  newRoomButton.addEventListener('click', () => {
-    const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set('room', createRoomId());
-    window.location.href = nextUrl.toString();
-  });
+  function attachNewRoomButtonHandler() {
+    const btn = playHud.querySelector('#new-room');
+    if (btn) {
+      btn.onclick = () => {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('room', createRoomId());
+        window.location.href = nextUrl.toString();
+      };
+    }
+  }
+  attachNewRoomButtonHandler();
 
 }
 
@@ -471,23 +466,28 @@ function setupRoom() {
     getActiveParticipantIds,
     sendLobby,
     onStartGame: () => {
-     
+      // Show status
       if (isHost()) {
-          statusLabel.textContent = 'Game started! \n You are the host.';
-        } else {
-          statusLabel.textContent = `Game started!`;
-        }
+        statusLabel.textContent = 'Game started! \n You are the host.';
+      } else {
+        statusLabel.textContent = `Game started!`;
+      }
 
       // Update lobby UI with final player statuses before starting game
       if (lobby) {
         lobbyUI.render(lobby, selfId, getActiveParticipantIds, shortId);
       }
 
+      // Set phase and unpause
       gameState.phase = 'playing';
+      setPaused(false); // Unpause if paused
 
       matchTime = 0;
-      lastUnpausedTime = performance.now();
+      setLastUnpausedTime(performance.now());
       resetMatch();
+
+      // Ensure main game loop is running
+      requestAnimationFrame(loop);
     },
 
     lobbyRef: lobby,
@@ -495,7 +495,8 @@ function setupRoom() {
   });
 
   // add self with empty name initially
-  lobby.state.players.set(selfId, {name: lobby.state.players.get(selfId)?.name || '', ready: false, });  
+  lobby.state.players.set(selfId, {name: lobby.state.players.get(selfId)?.name || '', ready: false, });
+  setLobbyRef(lobby); // Ensure lobbyRef is set immediately
   gameState.phase = 'lobby';
 
   refreshHostRole();
@@ -612,8 +613,12 @@ function setupRoom() {
     lobby.handleMessage(payload, peerId);
   });
 
+
   playHud.style.display = 'block';
-  pauseMenu.style.display = 'none';
+  // Pause menu UI is managed by pause.js
+
+  // Ensure pause networking is set up for all peers after room and player are ready
+  setupPauseNetworking(room, localPlayer);
 
 }
 
@@ -812,6 +817,7 @@ function loop() {
   try {
   
   renderUI(gameState, { lobby, playHud, selfId, shortId, getActiveParticipantIds, lobbyUI});
+  if (typeof attachNewRoomButtonHandler === 'function') attachNewRoomButtonHandler();
 
   // LOBBY GATING
   if (gameState.phase !== 'playing') {
@@ -824,12 +830,12 @@ function loop() {
   if (globalMatchTimer) globalMatchTimer.textContent = formatTime(matchTime);
   const delta = Math.min(clock.getDelta(), 0.05);
 
-  if (!isPaused) {
+  if (!getPaused()) {
     // Timer only runs when not paused
     if (isHost()) {
-      matchTime += (performance.now() - lastUnpausedTime) / 1000;
+      matchTime += (performance.now() - getLastUnpausedTime()) / 1000;
     }
-    lastUnpausedTime = performance.now();
+    setLastUnpausedTime(performance.now());
 
     // Host loop
     if (isHost()) {
@@ -899,7 +905,7 @@ function loop() {
     }
   } else {
     // If paused, just update the lastUnpausedTime so timer resumes smoothly
-    lastUnpausedTime = performance.now();
+    setLastUnpausedTime(performance.now());
   }
 
   updateHpBar();

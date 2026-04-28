@@ -1,0 +1,132 @@
+// Import lobbyRef to access player names
+import { lobbyRef, setLobbyRef } from '../main.js';
+// --- Multiplayer Pause Networking Setup ---
+// Call this from main.js: setupPauseNetworking(room, localPlayer)
+let isPaused = false;
+let lastUnpausedTime = performance.now();
+let pauseMenu = null;
+let resumeBtn = null;
+let quitBtn = null;
+let pauseStatusLabel = null;
+let pauseWhoLabel = null;
+let sendPause = null;
+let selfName = '';
+
+
+// Setup networking for pause actions. All peers (host or not) process all pause actions.
+export function setupPauseNetworking(room, localPlayer) {
+  if (!room || !localPlayer) {
+    console.warn('[pause] setupPauseNetworking: missing room or localPlayer');
+    return;
+  }
+  // Ensure lobbyRef is set
+  if (!lobbyRef && window.lobby) {
+    setLobbyRef(window.lobby);
+  }
+  const [sendPauseAction, receivePause] = room.makeAction('pause');
+  sendPause = sendPauseAction;
+  selfName = localPlayer.id;
+  if (receivePause) {
+    receivePause((payload) => {
+      applyPauseNetworkEvent(payload);
+    });
+  }
+}
+
+export function initPauseMenu() {
+  pauseMenu = document.getElementById('pause-menu');
+  resumeBtn = document.getElementById('resume-btn');
+  quitBtn = document.getElementById('quit-btn');
+  pauseStatusLabel = document.getElementById('pause-status-label');
+  pauseWhoLabel = document.getElementById('pause-who-label');
+  if (resumeBtn) {
+    resumeBtn.addEventListener('click', () => triggerPauseAction(false, 'resume'));
+  }
+  if (quitBtn) {
+    quitBtn.addEventListener('click', () => triggerPauseAction(false, 'quit'));
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') triggerPauseAction(!isPaused, isPaused ? 'resume' : 'pause');
+  });
+}
+
+import { gameState } from '../main.js';
+
+function triggerPauseAction(paused, action = 'pause') {
+  // Only allow pausing in 'playing' phase
+  if (!gameState || gameState.phase !== 'playing') {
+    console.warn('[pause] Cannot pause: not in playing phase');
+    if (pauseStatusLabel) pauseStatusLabel.textContent = 'Cannot pause: only allowed during gameplay.';
+    return;
+  }
+  // Require name only in playing phase
+  if (!lobbyRef || !lobbyRef.state || !lobbyRef.state.players || !lobbyRef.state.players.get) {
+    console.warn('[pause] Cannot pause: lobby not ready');
+    if (pauseStatusLabel) pauseStatusLabel.textContent = 'Cannot pause: lobby not ready.';
+    return;
+  }
+  const playerObj = lobbyRef.state.players.get(selfName);
+  if (!playerObj || typeof playerObj.name !== 'string' || playerObj.name.trim() === '') {
+    console.warn('[pause] Cannot pause: player name not set');
+    if (pauseStatusLabel) pauseStatusLabel.textContent = 'Cannot pause: set your name first.';
+    return;
+  }
+  let displayName = playerObj.name.trim();
+  console.log('[pause] Sending pause event:', { type: action, peerId: selfName, displayName });
+  if (sendPause && typeof sendPause === 'function') {
+    sendPause({ type: action, peerId: selfName, displayName });
+  }
+  applyPauseNetworkEvent({ type: action, peerId: selfName, displayName });
+}
+
+function applyPauseNetworkEvent({ type, peerId, displayName }) {
+  // Prefer displayName from payload, otherwise look up from lobbyRef
+  let nameToShow = displayName;
+  let lobbyName = undefined;
+  if (lobbyRef && lobbyRef.state && lobbyRef.state.players && lobbyRef.state.players.get) {
+    const playerObj = lobbyRef.state.players.get(peerId);
+    if (playerObj && playerObj.name && playerObj.name.trim() !== '') {
+      lobbyName = playerObj.name;
+    }
+  }
+  if ((!nameToShow || nameToShow.trim() === '') && lobbyName) {
+    nameToShow = lobbyName;
+  } else if (!nameToShow || nameToShow.trim() === '') {
+    nameToShow = 'Player';
+  }
+  console.log('[pause] Received pause event:', { type, peerId, displayName, lobbyName, nameToShow });
+  if (type === 'pause') {
+    isPaused = true;
+    if (pauseMenu) pauseMenu.style.display = 'flex';
+    if (pauseWhoLabel) pauseWhoLabel.textContent = nameToShow;
+    if (pauseStatusLabel) pauseStatusLabel.textContent = '';
+  } else if (type === 'resume') {
+    isPaused = false;
+    if (pauseMenu) pauseMenu.style.display = 'none';
+    lastUnpausedTime = performance.now();
+    if (pauseWhoLabel) pauseWhoLabel.textContent = '';
+    if (pauseStatusLabel) pauseStatusLabel.textContent = `${nameToShow} resumed the game.`;
+  } else if (type === 'quit') {
+    isPaused = false;
+    if (pauseMenu) pauseMenu.style.display = 'none';
+    lastUnpausedTime = performance.now();
+    if (pauseWhoLabel) pauseWhoLabel.textContent = '';
+    if (pauseStatusLabel) pauseStatusLabel.textContent = `${nameToShow} quit the game.`;
+  }
+}
+
+export function setPaused(paused, action = 'pause') {
+  triggerPauseAction(paused, action);
+}
+
+export function getPaused() {
+  return isPaused;
+}
+
+export function getLastUnpausedTime() {
+  return lastUnpausedTime;
+}
+
+export function setLastUnpausedTime(time) {
+  lastUnpausedTime = time;
+}
