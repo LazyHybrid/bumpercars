@@ -1,0 +1,16 @@
+/* Basic style for power-up item */
+.powerup-item {
+  background: radial-gradient(circle at 60% 40%, #ffe066 60%, #ffb700 100%);
+  border: 2px solid #fffbe6;
+  box-shadow: 0 0 12px 2px #ffec80, 0 0 0 2px #ffb700 inset;
+  transition: opacity 0.3s, transform 0.2s;
+  opacity: 1;
+  cursor: pointer;
+  display: block;
+}
+
+.powerup-item.despawning {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.7);
+}
