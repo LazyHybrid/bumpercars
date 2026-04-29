@@ -1,7 +1,115 @@
+// --- Power-up pickup logic ---
+// Simple circle collision for pickup
+function isPlayerOnPowerup(player, powerup) {
+  const playerPos = player.position;
+  const powerupPos = mapCellToWorld(powerup.x, powerup.y);
+  const dx = playerPos.x - powerupPos.x;
+  const dy = playerPos.y - powerupPos.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  // Pickup radius: half cell size
+  return dist < MAP_CELL_SIZE * 0.5;
+}
+
+// Client: send pickup request to host
+function tryPickupPowerup() {
+  if (isHost()) return; // Host handles in simulation
+  const list = window.syncedPowerups;
+  if (!Array.isArray(list)) return;
+  for (const p of list) {
+    if (isPlayerOnPowerup(localPlayer, p)) {
+      // Send pickup request to host
+      if (sendInput) sendInput({ pickup: { x: p.x, y: p.y, type: p.type } }, hostId);
+      break;
+    }
+  }
+}
+// --- Power-up rendering ---
+import '../src/powerup.css';
+let renderedPowerupEls = [];
+
+function renderPowerups() {
+  // Remove old DOM elements
+  for (const el of renderedPowerupEls) {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }
+  renderedPowerupEls = [];
+
+  // Get current powerup state
+  const list = isHost() ? powerups : window.syncedPowerups;
+  if (!Array.isArray(list)) return;
+  for (const p of list) {
+    const size = MAP_CELL_SIZE * 0.7 * WORLD_SCALE;
+    const el = document.createElement('div');
+    el.className = 'powerup-item';
+    el.style.position = 'absolute';
+    const worldPos = mapCellToWorld(p.x, p.y);
+    el.style.left = `calc(50% + ${worldPos.x * WORLD_SCALE - size / 2}px)`;
+    el.style.top = `calc(50% + ${worldPos.y * WORLD_SCALE - size / 2}px)`;
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    el.style.background = '#ff0';
+    el.style.borderRadius = '50%';
+    el.style.zIndex = 10;
+    el.dataset.type = p.type;
+    world.add(el);
+    renderedPowerupEls.push(el);
+  }
+}
+// --- Host-authoritative power-up state ---
+import { POWERUP_NAMES } from './game/powerups/list.js';
+
+// Host-only: authoritative list of active power-ups
+let powerups = [];
+let powerupTimers = [];
+let powerupSpawnAccumulator = 0;
+const POWERUP_SPAWN_INTERVAL = 7; // seconds
+const POWERUP_DESPAWN_TIME = 20; // seconds
+const MAX_POWERUPS = 2;
+
+function getRandomAvailableFloorTile() {
+  const map = getActiveMap();
+  const floorTiles = Array.isArray(map.floors) ? map.floors : [];
+  if (floorTiles.length === 0) return null;
+  // Exclude tiles already occupied by a powerup
+  const occupied = new Set(powerups.map(p => `${p.x},${p.y}`));
+  const availableTiles = floorTiles.filter(tile => !occupied.has(`${tile.x},${tile.y}`));
+  if (availableTiles.length === 0) return null;
+  const idx = Math.floor(Math.random() * availableTiles.length);
+  return availableTiles[idx];
+}
+
+function hostSpawnPowerup() {
+  if (powerups.length >= MAX_POWERUPS) return;
+  const tile = getRandomAvailableFloorTile();
+  if (!tile) return;
+  const type = POWERUP_NAMES[Math.floor(Math.random() * POWERUP_NAMES.length)];
+  const powerup = { x: tile.x, y: tile.y, type, spawnedAt: performance.now() / 1000 };
+  powerups.push(powerup);
+  // Schedule despawn
+  const timer = setTimeout(() => {
+    hostDespawnPowerup(powerup);
+  }, POWERUP_DESPAWN_TIME * 1000);
+  powerupTimers.push({ powerup, timer });
+}
+
+function hostDespawnPowerup(powerup) {
+  powerups = powerups.filter(p => p !== powerup);
+  const t = powerupTimers.find(t => t.powerup === powerup);
+  if (t) clearTimeout(t.timer);
+  powerupTimers = powerupTimers.filter(t => t.powerup !== powerup);
+}
+
+function hostResetPowerups() {
+  powerups = [];
+  powerupTimers.forEach(t => clearTimeout(t.timer));
+  powerupTimers = [];
+  powerupSpawnAccumulator = 0;
+}
 // =========================
 // Imports
 // =========================
 import './style.css';
+import './scene-actor-layer.css';
 import { joinRoom, selfId } from '@trystero-p2p/nostr';
 import {
   INPUT_SEND_INTERVAL_MS,
@@ -21,8 +129,7 @@ import {
   TURN_USERNAME
 } from './game/config';
 import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
-import { MAP_WORLD_SIZE, MAP_CELL_SIZE } from './game/map-data';
-import { getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
+import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
 import { LifeSystem, isOnFloorOrWall } from './game/life.js';
 import { createMapEditor } from './game/map-editor';
@@ -34,6 +141,7 @@ import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
 import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
 import { renderUI } from './ui/state-renderer.js';
+
 
 // =========================
 // DOM/UI References
@@ -105,6 +213,7 @@ if (newMatchBtn) {
 }
 
 function resetMatch() {
+    if (isHost()) hostResetPowerups();
   // Only host should execute this
   if (!isHost()) return;
   // Reset life, score, timer, and respawn all players at spawn
@@ -322,8 +431,8 @@ togglePlayButton.addEventListener('click', () => {
   }
 });
 
-// Start in play mode
 
+// Start in play mode
 world.add(localPlayer.group);
 setupInput(keys);
 setupRoom();
@@ -331,6 +440,8 @@ setupUi();
 initNameUI();
 window.addEventListener('resize', handleResize);
 requestAnimationFrame(loop);
+
+
 
 function startMapEditor(editorHudContainer) {
   // Clear previous editor HUD
@@ -560,9 +671,25 @@ function setupRoom() {
     }
 
     const player = ensureRemotePlayerWithLife(remotePlayers, world, peerId, getSpawnPoint(peerId));
+    // Power-up pickup request
+    if (payload && payload.pickup) {
+      // Validate pickup
+      const idx = powerups.findIndex(p => p.x === payload.pickup.x && p.y === payload.pickup.y && p.type === payload.pickup.type);
+      if (idx !== -1) {
+        // Remove powerup
+        const [removed] = powerups.splice(idx, 1);
+        // Optionally: grant effect here
+        // TODO: Apply powerupEffects[removed.type](player)
+        // Remove timer
+        const t = powerupTimers.find(t => t.powerup === removed);
+        if (t) clearTimeout(t.timer);
+        powerupTimers = powerupTimers.filter(t => t.powerup !== removed);
+        // Sync state
+        sendSnapshotPacket();
+      }
+    }
     player.input = normalizeInput(payload);
     player.lastSeenAt = performance.now();
-
   });
 
   receiveSnapshot((payload, peerId) => {
@@ -585,11 +712,8 @@ function setupRoom() {
       updateMatchTimerDisplay();
     }
 
-    if (peerId !== hostId) {
-      return;
-    }
-
-    applySnapshot(payload.players);
+    // All clients apply the full snapshot (players and powerups)
+    applySnapshot(payload);
   });
 
   receiveMap((payload, peerId) => {
@@ -738,11 +862,8 @@ function sendSnapshotPacket(targetPeers) {
 
   sendSnapshot({
     hostId: selfId,
-
     phase: lobby?.state.phase ?? 'playing',
-
     matchTime,
-
     players: getAllPlayers().map((player) => ({
       id: player.id,
       x: player.position.x,
@@ -750,11 +871,11 @@ function sendSnapshotPacket(targetPeers) {
       heading: player.heading,
       vx: player.velocity.x,
       vz: player.velocity.y,
-
       ready: lobby?.state.players.get(player.id)?.ready ?? false,
       score: player.score ?? 0,
       alive: playerLives[player.id]?.isAlive?.() ?? true,
-    }))
+    })),
+    powerups,
   }, targetPeers);
 }
 
@@ -917,6 +1038,8 @@ function loop() {
     updateWorldView(delta);
   }
 
+  renderPowerups();
+  tryPickupPowerup();
   world.render();
   requestAnimationFrame(loop);
 
@@ -1017,6 +1140,14 @@ function getAllPlayers() {
 }
 
 function simulateAuthoritativeStep(delta) {
+    // Host: spawn powerups on timer
+    if (isHost()) {
+      powerupSpawnAccumulator += delta;
+      if (powerupSpawnAccumulator >= POWERUP_SPAWN_INTERVAL) {
+        powerupSpawnAccumulator = 0;
+        hostSpawnPowerup();
+      }
+    }
   // Only include alive players for movement and collision
   const players = getAllPlayers().filter(p => {
     if (p.id === selfId) return playerLives[selfId]?.isAlive();
@@ -1038,12 +1169,46 @@ function simulateAuthoritativeStep(delta) {
       resolvePlayerCollision(players[index], players[otherIndex]);
     }
   }
+
+  // Host: check if local player picks up any power-up
+  if (isHost() && playerLives[selfId]?.isAlive()) {
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      const p = powerups[i];
+      if (isPlayerOnPowerup(localPlayer, p)) {
+        // Remove powerup
+        const [removed] = powerups.splice(i, 1);
+        // Optionally: grant effect here
+        // TODO: Apply powerupEffects[removed.type](localPlayer)
+        // Remove timer
+        const t = powerupTimers.find(t => t.powerup === removed);
+        if (t) clearTimeout(t.timer);
+        powerupTimers = powerupTimers.filter(t => t.powerup !== removed);
+        // Sync state
+        sendSnapshotPacket();
+      }
+    }
+  }
 }
 
 function applySnapshot(playerStates) {
   const now = performance.now();
 
-  for (const playerState of playerStates) {
+  // Accepts either (players) or ({ players, powerups })
+  let playerList = playerStates;
+  let powerupList = undefined;
+  if (Array.isArray(playerStates)) {
+    playerList = playerStates;
+  } else if (playerStates && typeof playerStates === 'object') {
+    playerList = playerStates.players;
+    powerupList = playerStates.powerups;
+  }
+
+  // Store powerup state for rendering (client only)
+  if (!isHost() && Array.isArray(powerupList)) {
+    window.syncedPowerups = powerupList;
+  }
+
+  for (const playerState of playerList) {
     if (playerState.id === selfId) {
       if (!isHost()) {
         localPlayer.targetPosition.set(playerState.x, playerState.z);
