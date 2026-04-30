@@ -1,3 +1,40 @@
+// =========================
+// Imports
+// =========================
+import './style.css';
+import './scene-actor-layer.css';
+import { joinRoom, selfId } from '@trystero-p2p/nostr';
+import {
+  INPUT_SEND_INTERVAL_MS,
+  LOCAL_RECONCILE_RATE,
+  MAX_PLAYERS,
+  PUBLIC_ORIGIN,
+  RELAY_URLS,
+  REMOTE_INTERPOLATION_RATE,
+  REMOTE_TIMEOUT_MS,
+  ROOM_APP_ID,
+  SIMULATION_STEP,
+  SNAPSHOT_POSITION_SNAP_DISTANCE,
+  SNAPSHOT_SEND_INTERVAL_MS,
+  SNAPSHOT_VELOCITY_SNAP_DELTA,
+  TURN_CREDENTIAL,
+  TURN_URLS,
+  TURN_USERNAME
+} from './game/config';
+import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
+import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
+import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
+import { LifeSystem, isOnFloorOrWall } from './game/life.js';
+import { createMapEditor } from './game/map-editor';
+import { Vec2 } from './game/math';
+import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
+import { createWorld } from './game/scene';
+import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
+import { createLobbyController } from './lobby/lobby-controller';
+import { createLobbyUI } from './ui/lobby-ui';
+import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
+import { renderUI } from './ui/state-renderer.js';
+
 // --- Power-up pickup logic ---
 // Simple circle collision for pickup
 function isPlayerOnPowerup(player, powerup) {
@@ -105,48 +142,11 @@ function hostResetPowerups() {
   powerupTimers = [];
   powerupSpawnAccumulator = 0;
 }
-// =========================
-// Imports
-// =========================
-import './style.css';
-import './scene-actor-layer.css';
-import { joinRoom, selfId } from '@trystero-p2p/nostr';
-import {
-  INPUT_SEND_INTERVAL_MS,
-  LOCAL_RECONCILE_RATE,
-  MAX_PLAYERS,
-  PUBLIC_ORIGIN,
-  RELAY_URLS,
-  REMOTE_INTERPOLATION_RATE,
-  REMOTE_TIMEOUT_MS,
-  ROOM_APP_ID,
-  SIMULATION_STEP,
-  SNAPSHOT_POSITION_SNAP_DISTANCE,
-  SNAPSHOT_SEND_INTERVAL_MS,
-  SNAPSHOT_VELOCITY_SNAP_DELTA,
-  TURN_CREDENTIAL,
-  TURN_URLS,
-  TURN_USERNAME
-} from './game/config';
-import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
-import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
-import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
-import { LifeSystem, isOnFloorOrWall } from './game/life.js';
-import { createMapEditor } from './game/map-editor';
-import { Vec2 } from './game/math';
-import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
-import { createWorld } from './game/scene';
-import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
-import { createLobbyController } from './lobby/lobby-controller';
-import { createLobbyUI } from './ui/lobby-ui';
-import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
-import { renderUI } from './ui/state-renderer.js';
 
 
 // =========================
 // DOM/UI References
 // =========================
-// ...existing code...
 const playHud = document.getElementById('play-hud');
 const editorHud = document.getElementById('editor-hud');
 const eyebrowLabel = playHud.querySelector('.eyebrow');
