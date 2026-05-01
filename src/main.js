@@ -112,6 +112,15 @@ import './style.css';
 import './scene-actor-layer.css';
 import { joinRoom, selfId } from '@trystero-p2p/nostr';
 import {
+  ABILITY_DEFINITIONS,
+  ABILITY_IDS,
+  applyPlayerAbilitiesSnapshot,
+  resetPlayerAbilities,
+  serializePlayerAbilities,
+  updatePlayerAbilityInput,
+} from './game/abilities';
+import { syncCooldownIndicator } from './game/cooldowns';
+import {
   INPUT_SEND_INTERVAL_MS,
   LOCAL_RECONCILE_RATE,
   MAX_PLAYERS,
@@ -128,7 +137,7 @@ import {
   TURN_URLS,
   TURN_USERNAME
 } from './game/config';
-import { normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
+import { createInputState, normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
 import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
 import { LifeSystem, isOnFloorOrWall } from './game/life.js';
@@ -184,6 +193,8 @@ let matchTime = 0;
 const matchTimerDisplay = document.getElementById('match-timer');
 const globalMatchTimer = document.getElementById('global-match-timer');
 const newMatchBtn = document.getElementById('new-match-btn');
+const abilityCooldownIndicator = document.getElementById('ability-cooldown-indicator');
+const abilityCooldownIcon = document.getElementById('ability-cooldown-icon');
 
 // Lobby list container
 const lobbyList = document.getElementById('lobby-list');
@@ -224,6 +235,8 @@ function resetMatch() {
   localPlayer.score = 0;
   localPlayer.velocity.set(0, 0);
   localPlayer.impactVelocity.set(0, 0);
+  resetPlayerAbilities(localPlayer);
+  localPlayer.abilityInputState.speedBoostHeld = false;
   const spawn = getSpawnPoint(selfId);
   localPlayer.position.set(spawn.x, spawn.y);
   localPlayer.previousPosition.copy(localPlayer.position);
@@ -237,6 +250,8 @@ function resetMatch() {
     player.score = 0;
     player.velocity.set(0, 0);
     player.impactVelocity.set(0, 0);
+    resetPlayerAbilities(player);
+    player.abilityInputState.speedBoostHeld = false;
     const spawn = getSpawnPoint(peerId);
     player.position.set(spawn.x, spawn.y);
     player.previousPosition.copy(player.position);
@@ -296,14 +311,7 @@ const { world, clock } = createWorld(sceneRoot);
 const initialMap = getActiveMap();
 const spawnPoint = mapCellToWorld(getMapSpawn(initialMap, 0).x, getMapSpawn(initialMap, 0).y);
 
-const keys = {
-  forward: false,
-  backward: false,
-  left: false,
-  right: false,
-  strafeLeft: false,
-  strafeRight: false,
-};
+const keys = createInputState();
 
 const remotePlayers = new Map();
 
@@ -874,6 +882,7 @@ function sendSnapshotPacket(targetPeers) {
       ready: lobby?.state.players.get(player.id)?.ready ?? false,
       score: player.score ?? 0,
       alive: playerLives[player.id]?.isAlive?.() ?? true,
+      abilities: serializePlayerAbilities(player),
     })),
     powerups,
   }, targetPeers);
@@ -1030,6 +1039,13 @@ function loop() {
   }
 
   updateHpBar();
+  syncCooldownIndicator(
+    abilityCooldownIndicator,
+    abilityCooldownIcon,
+    ABILITY_DEFINITIONS[ABILITY_IDS.SPEED_BOOST],
+    localPlayer.abilities?.[ABILITY_IDS.SPEED_BOOST],
+    performance.now() / 1000
+  );
 
   // Camera logic: follow car in play mode, free move in edit mode or if eliminated
   if (isEditMode || !playerLives[selfId]?.isAlive()) {
@@ -1049,7 +1065,10 @@ function loop() {
 }
 
 function updatePredictedLocalPlayer(delta) {
-  simulateMovement(localPlayer, readCurrentInputState(keys), delta);
+  const input = readCurrentInputState(keys);
+  const now = performance.now() / 1000;
+  updatePlayerAbilityInput(localPlayer, input, now);
+  simulateMovement(localPlayer, input, delta, now);
   resolveArenaCollision(localPlayer);
   resolveMapWallCollisions(localPlayer);
   reconcileLocalPlayer(delta);
@@ -1158,7 +1177,9 @@ function simulateAuthoritativeStep(delta) {
     const input = player.isLocal
       ? readCurrentInputState(keys)
       : (player.input ?? { forward: false, backward: false, left: false, right: false, strafeLeft: false, strafeRight: false });
-    simulateMovement(player, input, delta);
+    const now = performance.now() / 1000;
+    updatePlayerAbilityInput(player, input, now);
+    simulateMovement(player, input, delta, now);
     resolveArenaCollision(player);
     resolveMapWallCollisions(player);
   }
@@ -1214,6 +1235,7 @@ function applySnapshot(playerStates) {
         localPlayer.targetPosition.set(playerState.x, playerState.z);
         localPlayer.targetVelocity.set(playerState.vx, playerState.vz);
         localPlayer.targetHeading = playerState.heading;
+        applyPlayerAbilitiesSnapshot(localPlayer, playerState.abilities);
         localPlayer.hasSnapshot = true;
         localPlayer.lastSeenAt = now;
       }
@@ -1245,6 +1267,7 @@ function applySnapshot(playerStates) {
     player.targetPosition.set(playerState.x, playerState.z);
     player.targetVelocity.set(playerState.vx, playerState.vz);
     player.targetHeading = playerState.heading;
+    applyPlayerAbilitiesSnapshot(player, playerState.abilities);
     player.lastSeenAt = now;
 
     if (shouldSnapToSnapshot) {
@@ -1260,7 +1283,6 @@ function applySnapshot(playerStates) {
     }
   }
 }
-
 
 // Only update hostId from host packets or on join/leave
 function refreshHostRole(forcedHostId) {

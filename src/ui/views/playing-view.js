@@ -13,8 +13,9 @@ export function renderPlayingUI(gameState) {
   show('#global-match-timer')
   show('#score-display')
   show('#hp-bar-container')
+  show('#ability-cooldown-indicator')
 }
 
 export function cleanupPlayingUI() {
-  // placeholder for any cleanup needed when leaving playing phase
+  hide('#ability-cooldown-indicator')
 }

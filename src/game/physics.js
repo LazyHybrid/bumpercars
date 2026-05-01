@@ -12,6 +12,7 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
+import { getSpeedBoostScale } from './abilities';
 import { clamp, lerp, Vec2 } from './math';
 import { getActiveMap, mapWallToWorldRect } from './map-data';
 
@@ -20,7 +21,7 @@ const wallContactThreshold = 0.18;
 const wallTouchPush = 5.5;
 const wallPenetrationPush = 18;
 
-export function simulateMovement(player, input, delta) {
+export function simulateMovement(player, input, delta, now = performance.now() / 1000) {
   const traction = 0.82;
   const lateralGrip = 4.8;
   const strafeGrip = 1.2;
@@ -30,7 +31,8 @@ export function simulateMovement(player, input, delta) {
     ? Math.min(1, player.speedRamp + delta / SPEED_RAMP_TIME_SECONDS)
     : Math.max(0, player.speedRamp - delta / (SPEED_RAMP_TIME_SECONDS * 0.5));
 
-  const speedScale = lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, player.speedRamp);
+  const baseSpeedScale = lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, player.speedRamp);
+  const speedScale = getSpeedBoostScale(player, baseSpeedScale, now);
   const acceleration = (input.forward ? 22 : input.backward ? -15 : 0) * speedScale;
   const speed = player.velocity.length();
   const steerInput = (input.left ? 1 : 0) - (input.right ? 1 : 0);

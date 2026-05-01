@@ -2,7 +2,6 @@
 // Used for random selection or UI
 
 export const POWERUP_NAMES = [
-  'speedBoost',
   'shield',
   'rocket',
   'ghost',

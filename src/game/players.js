@@ -1,4 +1,5 @@
 import { createInputState } from './input';
+import { createAbilityState } from './abilities';
 import { Vec2 } from './math';
 
 const WORLD_SCALE = 18;
@@ -43,6 +44,10 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
     targetVelocity: new Vec2(),
     targetHeading: 0,
     input: createInputState(),
+    abilities: createAbilityState(),
+    abilityInputState: {
+      speedBoostHeld: false,
+    },
     hasSnapshot: isLocal,
     lastSeenAt: performance.now(),
   };

@@ -190,6 +190,81 @@ body {
   top: 50%;
 }
 
+#ability-cooldown-indicator {
+  --cooldown-progress: 1;
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  width: 84px;
+  height: 84px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#ability-cooldown-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(19, 13, 5, 0.92) 0 58%, transparent 59%),
+    conic-gradient(
+      from -90deg,
+      rgba(255, 206, 65, 0.98) calc(var(--cooldown-progress) * 1turn),
+      rgba(255, 206, 65, 0.16) 0
+    );
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 241, 195, 0.14);
+}
+
+#ability-cooldown-icon {
+  position: relative;
+  font-size: 2.15rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #3b2703;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #fff7cb 0%, #ffc83d 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(255, 255, 255, 0.48),
+    inset 0 -6px 10px rgba(112, 66, 0, 0.18);
+}
+
+#ability-cooldown-indicator[data-ready="false"] #ability-cooldown-icon {
+  filter: saturate(0.72) brightness(0.9);
+}
+
+#ability-cooldown-indicator[data-active="true"] #ability-cooldown-ring {
+  box-shadow:
+    0 0 0 10px rgba(255, 204, 61, 0.14),
+    0 12px 30px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(255, 244, 202, 0.22);
+}
+
+@media (max-width: 640px) {
+  #ability-cooldown-indicator {
+    bottom: 18px;
+    width: 72px;
+    height: 72px;
+  }
+
+  #ability-cooldown-icon {
+    width: 46px;
+    height: 46px;
+    font-size: 1.8rem;
+  }
+}
+
 .arena-zone {
   margin-left: calc(var(--arena-zone-size, 0px) / -2);
   margin-top: calc(var(--arena-zone-size, 0px) / -2);
