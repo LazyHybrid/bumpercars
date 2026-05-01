@@ -5,7 +5,7 @@ import {
   SPEED_BOOST_RAMP_UP_SECONDS,
 } from './config';
 import { getCooldownProgress, isCooldownActive } from './cooldowns';
-import { activateShield, speedBoost } from './powerups/effects';
+import { activateHeldAbilitySlot, speedBoost } from './powerups/effects';
 
 export const ABILITY_IDS = {
   SPEED_BOOST: 'speedBoost',
@@ -94,7 +94,7 @@ export function resetPlayerAbilities(player) {
 
 export function updatePlayerAbilityInput(player, input, now) {
   if (!player.abilityInputState) {
-    player.abilityInputState = { speedBoostHeld: false, ability1Held: false };
+    player.abilityInputState = { speedBoostHeld: false, ability1Held: false, ability2Held: false };
   }
 
   const speedBoostHeld = Boolean(input?.speedBoost);
@@ -105,7 +105,13 @@ export function updatePlayerAbilityInput(player, input, now) {
 
   const ability1Held = Boolean(input?.ability1);
   if (ability1Held && !player.abilityInputState.ability1Held) {
-    activateShield(player, now);
+    activateHeldAbilitySlot(player, 0, now);
   }
   player.abilityInputState.ability1Held = ability1Held;
+
+  const ability2Held = Boolean(input?.ability2);
+  if (ability2Held && !player.abilityInputState.ability2Held) {
+    activateHeldAbilitySlot(player, 1, now);
+  }
+  player.abilityInputState.ability2Held = ability2Held;
 }
