@@ -75,7 +75,8 @@ Without a TURN server, many cross-network connections will still work, but some 
 ## Controls
 
 - WASD: Drive
-- Mouse: Steer camera
+- Space: Speed boost
+- Q and E: for power ups that are picked up
 - Escape: Pause menu
 - Edit Map: Enter map editor
 - New Match: Reset the match for all players
