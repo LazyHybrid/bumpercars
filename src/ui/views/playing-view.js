@@ -13,9 +13,11 @@ export function renderPlayingUI(gameState) {
   show('#global-match-timer')
   show('#score-display')
   show('#hp-bar-container')
+  show('#ability-slots')
   show('#ability-cooldown-indicator')
 }
 
 export function cleanupPlayingUI() {
+  hide('#ability-slots')
   hide('#ability-cooldown-indicator')
 }

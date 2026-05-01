@@ -206,6 +206,72 @@ body {
   justify-content: center;
 }
 
+#ability-slots {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 186px;
+  pointer-events: none;
+  z-index: 99998;
+}
+
+.ability-slot {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ecf7ff;
+  background: linear-gradient(180deg, rgba(8, 14, 20, 0.9), rgba(24, 34, 46, 0.9));
+  box-shadow:
+    inset 0 0 0 1px rgba(185, 220, 255, 0.18),
+    0 8px 22px rgba(0, 0, 0, 0.32);
+}
+
+.ability-slot[data-empty="true"] {
+  opacity: 0.4;
+}
+
+.ability-slot__icon {
+  font-size: 3.3rem;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(128, 206, 255, 0.45);
+}
+
+.ability-slot__icon svg {
+  width: 3.2rem;
+  height: 3.2rem;
+}
+
+.ability-slot[data-ability="shield"] .ability-slot__icon {
+  color: #7bd3ff;
+  filter: drop-shadow(0 0 14px rgba(90, 204, 255, 0.6));
+}
+
+.ability-slot__badge {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe48f, #ffbf2f);
+  color: #2d1b00;
+  font-size: 1rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 2px 9px rgba(0, 0, 0, 0.32),
+    inset 0 1px 2px rgba(255, 255, 255, 0.45);
+}
+
 #ability-cooldown-ring {
   position: absolute;
   inset: 0;
@@ -252,6 +318,32 @@ body {
 }
 
 @media (max-width: 640px) {
+  #ability-slots {
+    bottom: 18px;
+    gap: 140px;
+  }
+
+  .ability-slot {
+    width: 86px;
+    height: 86px;
+    border-radius: 18px;
+  }
+
+  .ability-slot__icon {
+    font-size: 2.4rem;
+  }
+
+  .ability-slot__icon svg {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  .ability-slot__badge {
+    min-width: 25px;
+    height: 25px;
+    font-size: 0.82rem;
+  }
+
   #ability-cooldown-indicator {
     bottom: 18px;
     width: 72px;
@@ -355,6 +447,33 @@ body {
 
 .car--local {
   filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.55));
+}
+
+.car--shielded::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(110, 210, 255, 0.18) 0%, transparent 70%);
+  box-shadow:
+    0 0 0 3px rgba(130, 220, 255, 0.75),
+    0 0 18px 4px rgba(100, 200, 255, 0.45);
+  animation: shield-pulse 0.7s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 2;
+}
+
+@keyframes shield-pulse {
+  from {
+    box-shadow:
+      0 0 0 3px rgba(130, 220, 255, 0.75),
+      0 0 18px 4px rgba(100, 200, 255, 0.45);
+  }
+  to {
+    box-shadow:
+      0 0 0 5px rgba(160, 235, 255, 0.92),
+      0 0 28px 8px rgba(120, 215, 255, 0.6);
+  }
 }
 
 .car__bumper,

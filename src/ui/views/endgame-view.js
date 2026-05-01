@@ -7,6 +7,7 @@ export function renderEndgameUI(gameState) {
   show('.hud__actions')
 
   hide('#hp-bar-container')
+  hide('#ability-slots')
   hide('#ability-cooldown-indicator')
 
   // later:

@@ -47,7 +47,9 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
     abilities: createAbilityState(),
     abilityInputState: {
       speedBoostHeld: false,
+      ability1Held: false,
     },
+    shield: { charges: 0, activeUntil: 0 },
     hasSnapshot: isLocal,
     lastSeenAt: performance.now(),
   };
@@ -70,10 +72,11 @@ export function createSpawnPosition(index) {
   return { x: Math.cos(angle) * 10, y: Math.sin(angle) * 10 };
 }
 
-export function syncPlayerTransform(player) {
+export function syncPlayerTransform(player, now = performance.now() / 1000) {
   const x = player.position.x * WORLD_SCALE;
   const y = player.position.y * WORLD_SCALE;
   player.group.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${player.heading + Math.PI}rad)`;
+  player.group.classList.toggle('car--shielded', now < (player.shield?.activeUntil ?? 0));
 }
 
 export function colorFromId(id) {

@@ -70,9 +70,13 @@ function getRandomAvailableFloorTile() {
   const map = getActiveMap();
   const floorTiles = Array.isArray(map.floors) ? map.floors : [];
   if (floorTiles.length === 0) return null;
+  const wallTiles = new Set((Array.isArray(map.walls) ? map.walls : []).map((tile) => `${tile.x},${tile.y}`));
   // Exclude tiles already occupied by a powerup
   const occupied = new Set(powerups.map(p => `${p.x},${p.y}`));
-  const availableTiles = floorTiles.filter(tile => !occupied.has(`${tile.x},${tile.y}`));
+  const availableTiles = floorTiles.filter((tile) => {
+    const key = `${tile.x},${tile.y}`;
+    return !occupied.has(key) && !wallTiles.has(key);
+  });
   if (availableTiles.length === 0) return null;
   const idx = Math.floor(Math.random() * availableTiles.length);
   return availableTiles[idx];
@@ -120,6 +124,7 @@ import {
   updatePlayerAbilityInput,
 } from './game/abilities';
 import { syncCooldownIndicator } from './game/cooldowns';
+import { shield as shieldEffect } from './game/powerups/effects';
 import {
   INPUT_SEND_INTERVAL_MS,
   LOCAL_RECONCILE_RATE,
@@ -195,6 +200,12 @@ const globalMatchTimer = document.getElementById('global-match-timer');
 const newMatchBtn = document.getElementById('new-match-btn');
 const abilityCooldownIndicator = document.getElementById('ability-cooldown-indicator');
 const abilityCooldownIcon = document.getElementById('ability-cooldown-icon');
+const abilitySlotLeft = document.getElementById('ability-slot-left');
+const abilitySlotLeftIcon = document.getElementById('ability-slot-left-icon');
+const abilitySlotLeftBadge = document.getElementById('ability-slot-left-badge');
+const abilitySlotRight = document.getElementById('ability-slot-right');
+const abilitySlotRightIcon = document.getElementById('ability-slot-right-icon');
+const abilitySlotRightBadge = document.getElementById('ability-slot-right-badge');
 
 // Lobby list container
 const lobbyList = document.getElementById('lobby-list');
@@ -237,6 +248,8 @@ function resetMatch() {
   localPlayer.impactVelocity.set(0, 0);
   resetPlayerAbilities(localPlayer);
   localPlayer.abilityInputState.speedBoostHeld = false;
+  localPlayer.abilityInputState.ability1Held = false;
+  localPlayer.shield = { charges: 0, activeUntil: 0 };
   const spawn = getSpawnPoint(selfId);
   localPlayer.position.set(spawn.x, spawn.y);
   localPlayer.previousPosition.copy(localPlayer.position);
@@ -252,6 +265,8 @@ function resetMatch() {
     player.impactVelocity.set(0, 0);
     resetPlayerAbilities(player);
     player.abilityInputState.speedBoostHeld = false;
+    player.abilityInputState.ability1Held = false;
+    player.shield = { charges: 0, activeUntil: 0 };
     const spawn = getSpawnPoint(peerId);
     player.position.set(spawn.x, spawn.y);
     player.previousPosition.copy(player.position);
@@ -686,8 +701,7 @@ function setupRoom() {
       if (idx !== -1) {
         // Remove powerup
         const [removed] = powerups.splice(idx, 1);
-        // Optionally: grant effect here
-        // TODO: Apply powerupEffects[removed.type](player)
+        applyPickupEffect(removed.type, player);
         // Remove timer
         const t = powerupTimers.find(t => t.powerup === removed);
         if (t) clearTimeout(t.timer);
@@ -883,6 +897,7 @@ function sendSnapshotPacket(targetPeers) {
       score: player.score ?? 0,
       alive: playerLives[player.id]?.isAlive?.() ?? true,
       abilities: serializePlayerAbilities(player),
+      shield: { charges: player.shield?.charges ?? 0, activeUntil: player.shield?.activeUntil ?? 0 },
     })),
     powerups,
   }, targetPeers);
@@ -1046,6 +1061,7 @@ function loop() {
     localPlayer.abilities?.[ABILITY_IDS.SPEED_BOOST],
     performance.now() / 1000
   );
+  updateHeldAbilitySlots();
 
   // Camera logic: follow car in play mode, free move in edit mode or if eliminated
   if (isEditMode || !playerLives[selfId]?.isAlive()) {
@@ -1061,6 +1077,44 @@ function loop() {
 
   } catch (err) {
   console.error('LOOP ERROR:', err);
+}
+
+function setAbilitySlot(slot, iconEl, badgeEl, icon, charges) {
+  if (!slot || !iconEl || !badgeEl) {
+    return;
+  }
+
+  if (charges > 0) {
+    slot.dataset.empty = 'false';
+    if (icon === 'shield') {
+      iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2L4 5v6c0 5.6 3.8 9.9 8 11 4.2-1.1 8-5.4 8-11V5l-8-3zm0 2.2l6 2.2V11c0 4.4-2.8 8.1-6 9.2-3.2-1.1-6-4.8-6-9.2V6.4l6-2.2z"/></svg>';
+      slot.dataset.ability = 'shield';
+    } else {
+      iconEl.textContent = icon;
+      slot.dataset.ability = 'generic';
+    }
+    if (charges > 1) {
+      badgeEl.textContent = String(charges);
+      badgeEl.style.display = 'inline-flex';
+    } else {
+      badgeEl.textContent = '';
+      badgeEl.style.display = 'none';
+    }
+    return;
+  }
+
+  slot.dataset.empty = 'true';
+  slot.dataset.ability = 'none';
+  iconEl.textContent = '';
+  iconEl.innerHTML = '';
+  badgeEl.textContent = '';
+  badgeEl.style.display = 'none';
+}
+
+function updateHeldAbilitySlots() {
+  const shieldCharges = Math.max(0, Number(localPlayer?.shield?.charges ?? 0));
+  setAbilitySlot(abilitySlotLeft, abilitySlotLeftIcon, abilitySlotLeftBadge, 'shield', shieldCharges);
+  setAbilitySlot(abilitySlotRight, abilitySlotRightIcon, abilitySlotRightBadge, '', 0);
 }
 }
 
@@ -1198,8 +1252,7 @@ function simulateAuthoritativeStep(delta) {
       if (isPlayerOnPowerup(localPlayer, p)) {
         // Remove powerup
         const [removed] = powerups.splice(i, 1);
-        // Optionally: grant effect here
-        // TODO: Apply powerupEffects[removed.type](localPlayer)
+        applyPickupEffect(removed.type, localPlayer);
         // Remove timer
         const t = powerupTimers.find(t => t.powerup === removed);
         if (t) clearTimeout(t.timer);
@@ -1236,6 +1289,11 @@ function applySnapshot(playerStates) {
         localPlayer.targetVelocity.set(playerState.vx, playerState.vz);
         localPlayer.targetHeading = playerState.heading;
         applyPlayerAbilitiesSnapshot(localPlayer, playerState.abilities);
+        if (playerState.shield) {
+          if (!localPlayer.shield) localPlayer.shield = { charges: 0, activeUntil: 0 };
+          localPlayer.shield.charges = playerState.shield.charges;
+          localPlayer.shield.activeUntil = playerState.shield.activeUntil;
+        }
         localPlayer.hasSnapshot = true;
         localPlayer.lastSeenAt = now;
       }
@@ -1268,6 +1326,11 @@ function applySnapshot(playerStates) {
     player.targetVelocity.set(playerState.vx, playerState.vz);
     player.targetHeading = playerState.heading;
     applyPlayerAbilitiesSnapshot(player, playerState.abilities);
+    if (playerState.shield) {
+      if (!player.shield) player.shield = { charges: 0, activeUntil: 0 };
+      player.shield.charges = playerState.shield.charges;
+      player.shield.activeUntil = playerState.shield.activeUntil;
+    }
     player.lastSeenAt = now;
 
     if (shouldSnapToSnapshot) {
@@ -1282,6 +1345,10 @@ function applySnapshot(playerStates) {
       player.heading = playerState.heading;
     }
   }
+}
+
+function applyPickupEffect(type, player) {
+  if (type === 'shield') shieldEffect(player);
 }
 
 // Only update hostId from host packets or on join/leave
