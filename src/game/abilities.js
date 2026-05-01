@@ -1,13 +1,11 @@
 import {
-  BASE_SPEED_SCALE,
-  BOOSTED_SPEED_SCALE,
   SPEED_BOOST_COOLDOWN_SECONDS,
   SPEED_BOOST_DURATION_SECONDS,
   SPEED_BOOST_MAX_SPEED_SCALE,
   SPEED_BOOST_RAMP_UP_SECONDS,
 } from './config';
 import { getCooldownProgress, isCooldownActive } from './cooldowns';
-import { clamp, lerp } from './math';
+import { activateShield, speedBoost } from './powerups/effects';
 
 export const ABILITY_IDS = {
   SPEED_BOOST: 'speedBoost',
@@ -36,25 +34,6 @@ export function createAbilityState() {
       },
     ])
   );
-}
-
-export function getBaseMovementSpeedScale(player) {
-  return lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, clamp(player.speedRamp ?? 0, 0, 1));
-}
-
-export function tryActivateAbility(player, abilityId, now, data = {}) {
-  const definition = ABILITY_DEFINITIONS[abilityId];
-  const state = player.abilities?.[abilityId];
-
-  if (!definition || !state || now < state.cooldownUntil) {
-    return false;
-  }
-
-  state.activatedAt = now;
-  state.activeUntil = now + definition.duration;
-  state.cooldownUntil = now + definition.cooldown;
-  state.data = { ...data };
-  return true;
 }
 
 export function isAbilityActive(player, abilityId, now) {
@@ -115,15 +94,18 @@ export function resetPlayerAbilities(player) {
 
 export function updatePlayerAbilityInput(player, input, now) {
   if (!player.abilityInputState) {
-    player.abilityInputState = { speedBoostHeld: false };
+    player.abilityInputState = { speedBoostHeld: false, ability1Held: false };
   }
 
   const speedBoostHeld = Boolean(input?.speedBoost);
   if (speedBoostHeld && !player.abilityInputState.speedBoostHeld) {
-    tryActivateAbility(player, ABILITY_IDS.SPEED_BOOST, now, {
-      startScale: getBaseMovementSpeedScale(player),
-    });
+    speedBoost(player, now);
   }
-
   player.abilityInputState.speedBoostHeld = speedBoostHeld;
+
+  const ability1Held = Boolean(input?.ability1);
+  if (ability1Held && !player.abilityInputState.ability1Held) {
+    activateShield(player, now);
+  }
+  player.abilityInputState.ability1Held = ability1Held;
 }

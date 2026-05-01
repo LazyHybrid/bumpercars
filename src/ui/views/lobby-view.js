@@ -18,6 +18,7 @@ export function renderLobbyUI(gameState, context) {
   hide("#global-match-timer");
   hide("#score-display");
   hide("#hp-bar-container");
+  hide('#ability-slots');
   hide('#ability-cooldown-indicator');
 }
 

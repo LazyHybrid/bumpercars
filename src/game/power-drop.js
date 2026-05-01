@@ -37,9 +37,13 @@ function getRandomAvailableFloorTile() {
 	const map = getActiveMap();
 	const floorTiles = Array.isArray(map.floors) ? map.floors : [];
 	if (floorTiles.length === 0) return null;
+	const wallTiles = new Set((Array.isArray(map.walls) ? map.walls : []).map((tile) => `${tile.x},${tile.y}`));
 	// Exclude tiles already occupied by a powerup
 	const occupied = new Set(powerups.map(p => `${p.x},${p.y}`));
-	const availableTiles = floorTiles.filter(tile => !occupied.has(`${tile.x},${tile.y}`));
+	const availableTiles = floorTiles.filter((tile) => {
+		const key = `${tile.x},${tile.y}`;
+		return !occupied.has(key) && !wallTiles.has(key);
+	});
 	if (availableTiles.length === 0) return null;
 	const idx = Math.floor(Math.random() * availableTiles.length);
 	return availableTiles[idx];

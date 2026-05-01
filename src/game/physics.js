@@ -12,7 +12,7 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
-import { getSpeedBoostScale } from './powerups/effects';
+import { getShieldKnockbackScale, getSpeedBoostScale, isShieldActive } from './powerups/effects';
 import { clamp, lerp, Vec2 } from './math';
 import { getActiveMap, mapWallToWorldRect } from './map-data';
 
@@ -77,7 +77,10 @@ export function resolveMapWallCollisions(player) {
   }
 }
 
-export function resolvePlayerCollision(playerA, playerB) {
+export function resolvePlayerCollision(playerA, playerB, now = performance.now() / 1000) {
+  const aShielded = isShieldActive(playerA, now);
+  const bShielded = isShieldActive(playerB, now);
+
   const delta = playerA.position.clone().sub(playerB.position);
   const distance = delta.length();
   const minDistance = CAR_RADIUS * CAR_COLLISION_DISTANCE_MULTIPLIER;
@@ -91,7 +94,7 @@ export function resolvePlayerCollision(playerA, playerB) {
     ? delta.normalize()
     : getCollisionFallbackNormal(playerA, playerB);
 
-  applyPositionCorrection(playerA, playerB, normal, penetration);
+  applyPositionCorrection(playerA, playerB, normal, penetration, aShielded, bShielded);
 
   const motionA = getCollisionMotion(playerA);
   const motionB = getCollisionMotion(playerB);
@@ -108,21 +111,21 @@ export function resolvePlayerCollision(playerA, playerB) {
     / (inversePlayerMass + inversePlayerMass);
   const impulse = normal.clone().multiplyScalar(impulseMagnitude);
 
-  playerA.impactVelocity.addScaledVector(impulse, inversePlayerMass);
-  playerB.impactVelocity.addScaledVector(impulse, -inversePlayerMass);
+  playerA.impactVelocity.addScaledVector(impulse, inversePlayerMass * getShieldKnockbackScale(aShielded, bShielded));
+  playerB.impactVelocity.addScaledVector(impulse, -inversePlayerMass * getShieldKnockbackScale(bShielded, aShielded));
 
   resolveArenaCollision(playerA);
   resolveArenaCollision(playerB);
 }
 
-function applyPositionCorrection(playerA, playerB, normal, penetration) {
+function applyPositionCorrection(playerA, playerB, normal, penetration, aShielded = false, bShielded = false) {
   const correctionMagnitude = Math.max(penetration - COLLISION_POSITION_SLOP, 0)
     / (inversePlayerMass + inversePlayerMass)
     * COLLISION_POSITION_PERCENT;
   const correction = normal.clone().multiplyScalar(correctionMagnitude);
 
-  playerA.position.addScaledVector(correction, inversePlayerMass);
-  playerB.position.addScaledVector(correction, -inversePlayerMass);
+  if (!aShielded) playerA.position.addScaledVector(correction, inversePlayerMass);
+  if (!bShielded) playerB.position.addScaledVector(correction, -inversePlayerMass);
 }
 
 function getCollisionFallbackNormal(playerA, playerB) {
