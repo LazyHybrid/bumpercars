@@ -12,7 +12,7 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
-import { getSpeedBoostScale } from './abilities';
+import { getSpeedBoostScale } from './powerups/effects';
 import { clamp, lerp, Vec2 } from './math';
 import { getActiveMap, mapWallToWorldRect } from './map-data';
 

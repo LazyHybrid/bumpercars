@@ -68,25 +68,6 @@ export function getAbilityCooldownProgress(player, abilityId, now) {
   return getCooldownProgress(state, definition?.cooldown, now);
 }
 
-export function getSpeedBoostScale(player, baseSpeedScale, now) {
-  const abilityId = ABILITY_IDS.SPEED_BOOST;
-  const definition = ABILITY_DEFINITIONS[abilityId];
-  const state = player.abilities?.[abilityId];
-
-  if (!definition || !state || now >= state.activeUntil) {
-    return baseSpeedScale;
-  }
-
-  const rampProgress = definition.rampUpTime > 0
-    ? clamp((now - state.activatedAt) / definition.rampUpTime, 0, 1)
-    : 1;
-  const startScale = Number.isFinite(state.data?.startScale)
-    ? state.data.startScale
-    : baseSpeedScale;
-
-  return Math.max(baseSpeedScale, lerp(startScale, definition.maxSpeedScale, rampProgress));
-}
-
 export function serializePlayerAbilities(player) {
   return Object.fromEntries(
     Object.keys(ABILITY_DEFINITIONS).map((abilityId) => {
