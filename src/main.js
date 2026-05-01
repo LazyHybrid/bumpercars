@@ -26,6 +26,8 @@ function tryPickupPowerup() {
 // --- Power-up rendering ---
 import '../src/powerup.css';
 let renderedPowerupEls = [];
+let renderedBombEls = [];
+let bombs = [];
 
 function renderPowerups() {
   // Remove old DOM elements
@@ -54,6 +56,18 @@ function renderPowerups() {
     world.add(el);
     renderedPowerupEls.push(el);
   }
+}
+
+function renderBombs(now = performance.now() / 1000) {
+  renderedBombEls = renderBombEffects({
+    world,
+    bombs,
+    syncedBombs: window.syncedBombs,
+    isHostView: isHost(),
+    renderedBombEls,
+    worldScale: WORLD_SCALE,
+    now,
+  });
 }
 // --- Host-authoritative power-up state ---
 import { POWERUP_NAMES } from './game/powerups/list.js';
@@ -105,6 +119,8 @@ function hostDespawnPowerup(powerup) {
 
 function hostResetPowerups() {
   powerups = [];
+  bombs = [];
+  window.syncedBombs = [];
   powerupTimers.forEach(t => clearTimeout(t.timer));
   powerupTimers = [];
   powerupSpawnAccumulator = 0;
@@ -124,7 +140,16 @@ import {
   updatePlayerAbilityInput,
 } from './game/abilities';
 import { syncCooldownIndicator } from './game/cooldowns';
-import { shield as shieldEffect } from './game/powerups/effects';
+import {
+  applyHeldAbilitiesSnapshot,
+  applyPowerupEffect,
+  collectPendingBombDrops,
+  reconcileSyncedBombVisualTiming,
+  renderBombEffects,
+  resetHeldAbilities,
+  serializeHeldAbilities,
+  updateBombsState,
+} from './game/powerups/effects';
 import {
   INPUT_SEND_INTERVAL_MS,
   LOCAL_RECONCILE_RATE,
@@ -143,7 +168,7 @@ import {
   TURN_USERNAME
 } from './game/config';
 import { createInputState, normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
-import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
+import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getActiveMapSlot, getMapSlot, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
 import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
 import { LifeSystem, isOnFloorOrWall } from './game/life.js';
 import { createMapEditor } from './game/map-editor';
@@ -238,6 +263,11 @@ function resetMatch() {
     if (isHost()) hostResetPowerups();
   // Only host should execute this
   if (!isHost()) return;
+
+  const savedMap = getMapSlot(getActiveMapSlot());
+  applyAuthoritativeMap(savedMap);
+  sendMapPacket();
+
   // Reset life, score, timer, and respawn all players at spawn
   matchTime = 0;
   setLastUnpausedTime(performance.now());
@@ -249,7 +279,10 @@ function resetMatch() {
   resetPlayerAbilities(localPlayer);
   localPlayer.abilityInputState.speedBoostHeld = false;
   localPlayer.abilityInputState.ability1Held = false;
-  localPlayer.shield = { charges: 0, activeUntil: 0 };
+  localPlayer.abilityInputState.ability2Held = false;
+  resetHeldAbilities(localPlayer);
+  localPlayer.shield = { activeUntil: 0 };
+  localPlayer.pendingBombDrop = null;
   const spawn = getSpawnPoint(selfId);
   localPlayer.position.set(spawn.x, spawn.y);
   localPlayer.previousPosition.copy(localPlayer.position);
@@ -266,7 +299,10 @@ function resetMatch() {
     resetPlayerAbilities(player);
     player.abilityInputState.speedBoostHeld = false;
     player.abilityInputState.ability1Held = false;
-    player.shield = { charges: 0, activeUntil: 0 };
+    player.abilityInputState.ability2Held = false;
+    resetHeldAbilities(player);
+    player.shield = { activeUntil: 0 };
+    player.pendingBombDrop = null;
     const spawn = getSpawnPoint(peerId);
     player.position.set(spawn.x, spawn.y);
     player.previousPosition.copy(player.position);
@@ -897,9 +933,11 @@ function sendSnapshotPacket(targetPeers) {
       score: player.score ?? 0,
       alive: playerLives[player.id]?.isAlive?.() ?? true,
       abilities: serializePlayerAbilities(player),
-      shield: { charges: player.shield?.charges ?? 0, activeUntil: player.shield?.activeUntil ?? 0 },
+      heldAbilities: serializeHeldAbilities(player),
+      shield: { activeUntil: player.shield?.activeUntil ?? 0 },
     })),
     powerups,
+    bombs,
   }, targetPeers);
 }
 
@@ -1071,6 +1109,7 @@ function loop() {
   }
 
   renderPowerups();
+  renderBombs();
   tryPickupPowerup();
   world.render();
   requestAnimationFrame(loop);
@@ -1079,22 +1118,29 @@ function loop() {
   console.error('LOOP ERROR:', err);
 }
 
-function setAbilitySlot(slot, iconEl, badgeEl, icon, charges) {
+function setAbilitySlot(slot, iconEl, badgeEl, heldAbility) {
   if (!slot || !iconEl || !badgeEl) {
     return;
   }
 
-  if (charges > 0) {
+  if (heldAbility && heldAbility.charges > 0) {
     slot.dataset.empty = 'false';
-    if (icon === 'shield') {
+    if (heldAbility.type === 'shield') {
       iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2L4 5v6c0 5.6 3.8 9.9 8 11 4.2-1.1 8-5.4 8-11V5l-8-3zm0 2.2l6 2.2V11c0 4.4-2.8 8.1-6 9.2-3.2-1.1-6-4.8-6-9.2V6.4l6-2.2z"/></svg>';
       slot.dataset.ability = 'shield';
+    } else if (heldAbility.type === 'bomb') {
+      iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="13.5" r="6.5" fill="currentColor"/><path d="M10.5 6.8 13 4.3l2.7 2.7-2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.9 3.5h1.2M17.5 2.9v1.2M16.2 2.2l.8.8M16.2 4.8l.8-.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8.6" cy="11.4" r="1.2" fill="rgba(255,255,255,0.35)"/></svg>';
+      slot.dataset.ability = 'bomb';
     } else {
-      iconEl.textContent = icon;
-      slot.dataset.ability = 'generic';
+      iconEl.textContent = heldAbility.type === 'rocket'
+        ? 'R'
+        : heldAbility.type === 'ghost'
+          ? 'G'
+          : '?';
+      slot.dataset.ability = heldAbility.type;
     }
-    if (charges > 1) {
-      badgeEl.textContent = String(charges);
+    if (heldAbility.charges > 1) {
+      badgeEl.textContent = String(heldAbility.charges);
       badgeEl.style.display = 'inline-flex';
     } else {
       badgeEl.textContent = '';
@@ -1112,9 +1158,9 @@ function setAbilitySlot(slot, iconEl, badgeEl, icon, charges) {
 }
 
 function updateHeldAbilitySlots() {
-  const shieldCharges = Math.max(0, Number(localPlayer?.shield?.charges ?? 0));
-  setAbilitySlot(abilitySlotLeft, abilitySlotLeftIcon, abilitySlotLeftBadge, 'shield', shieldCharges);
-  setAbilitySlot(abilitySlotRight, abilitySlotRightIcon, abilitySlotRightBadge, '', 0);
+  const heldAbilities = Array.isArray(localPlayer?.heldAbilities) ? localPlayer.heldAbilities : [];
+  setAbilitySlot(abilitySlotLeft, abilitySlotLeftIcon, abilitySlotLeftBadge, heldAbilities[0] ?? null);
+  setAbilitySlot(abilitySlotRight, abilitySlotRightIcon, abilitySlotRightBadge, heldAbilities[1] ?? null);
 }
 }
 
@@ -1245,6 +1291,25 @@ function simulateAuthoritativeStep(delta) {
     }
   }
 
+  const now = performance.now() / 1000;
+  const droppedBombs = collectPendingBombDrops(players, now);
+  if (droppedBombs.length > 0) {
+    bombs.push(...droppedBombs);
+  }
+
+  const bombUpdate = updateBombsState(bombs, players, getActiveMap(), now);
+  bombs = bombUpdate.bombs;
+
+  if (bombUpdate.mapChanged) {
+    const appliedMap = setSessionMap(bombUpdate.map);
+    world.setMap(appliedMap);
+    sendMapPacket();
+  }
+
+  if (droppedBombs.length > 0 || bombUpdate.stateChanged) {
+    sendSnapshotPacket();
+  }
+
   // Host: check if local player picks up any power-up
   if (isHost() && playerLives[selfId]?.isAlive()) {
     for (let i = powerups.length - 1; i >= 0; i--) {
@@ -1267,19 +1332,28 @@ function simulateAuthoritativeStep(delta) {
 function applySnapshot(playerStates) {
   const now = performance.now();
 
-  // Accepts either (players) or ({ players, powerups })
+  // Accepts either (players) or ({ players, powerups, bombs })
   let playerList = playerStates;
   let powerupList = undefined;
+  let bombList = undefined;
   if (Array.isArray(playerStates)) {
     playerList = playerStates;
   } else if (playerStates && typeof playerStates === 'object') {
     playerList = playerStates.players;
     powerupList = playerStates.powerups;
+    bombList = playerStates.bombs;
   }
 
   // Store powerup state for rendering (client only)
   if (!isHost() && Array.isArray(powerupList)) {
     window.syncedPowerups = powerupList;
+  }
+  if (!isHost() && Array.isArray(bombList)) {
+    window.syncedBombs = reconcileSyncedBombVisualTiming(
+      window.syncedBombs,
+      bombList,
+      performance.now() / 1000
+    );
   }
 
   for (const playerState of playerList) {
@@ -1289,11 +1363,12 @@ function applySnapshot(playerStates) {
         localPlayer.targetVelocity.set(playerState.vx, playerState.vz);
         localPlayer.targetHeading = playerState.heading;
         applyPlayerAbilitiesSnapshot(localPlayer, playerState.abilities);
+        applyHeldAbilitiesSnapshot(localPlayer, playerState.heldAbilities);
         if (playerState.shield) {
-          if (!localPlayer.shield) localPlayer.shield = { charges: 0, activeUntil: 0 };
-          localPlayer.shield.charges = playerState.shield.charges;
+          if (!localPlayer.shield) localPlayer.shield = { activeUntil: 0 };
           localPlayer.shield.activeUntil = playerState.shield.activeUntil;
         }
+        localPlayer.pendingBombDrop = null;
         localPlayer.hasSnapshot = true;
         localPlayer.lastSeenAt = now;
       }
@@ -1326,11 +1401,12 @@ function applySnapshot(playerStates) {
     player.targetVelocity.set(playerState.vx, playerState.vz);
     player.targetHeading = playerState.heading;
     applyPlayerAbilitiesSnapshot(player, playerState.abilities);
+    applyHeldAbilitiesSnapshot(player, playerState.heldAbilities);
     if (playerState.shield) {
-      if (!player.shield) player.shield = { charges: 0, activeUntil: 0 };
-      player.shield.charges = playerState.shield.charges;
+      if (!player.shield) player.shield = { activeUntil: 0 };
       player.shield.activeUntil = playerState.shield.activeUntil;
     }
+    player.pendingBombDrop = null;
     player.lastSeenAt = now;
 
     if (shouldSnapToSnapshot) {
@@ -1348,7 +1424,7 @@ function applySnapshot(playerStates) {
 }
 
 function applyPickupEffect(type, player) {
-  if (type === 'shield') shieldEffect(player);
+  applyPowerupEffect(type, player);
 }
 
 // Only update hostId from host packets or on join/leave

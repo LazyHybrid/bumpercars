@@ -1,5 +1,6 @@
 import { createInputState } from './input';
 import { createAbilityState } from './abilities';
+import { resetHeldAbilities } from './powerups/effects';
 import { Vec2 } from './math';
 
 const WORLD_SCALE = 18;
@@ -29,7 +30,7 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
   tailLights.className = 'car__tail-lights';
   group.append(tailLights);
 
-  return {
+  const player = {
     id,
     isLocal,
     group,
@@ -48,11 +49,17 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
     abilityInputState: {
       speedBoostHeld: false,
       ability1Held: false,
+      ability2Held: false,
     },
-    shield: { charges: 0, activeUntil: 0 },
+    heldAbilities: [],
+    shield: { activeUntil: 0 },
+    pendingBombDrop: null,
     hasSnapshot: isLocal,
     lastSeenAt: performance.now(),
   };
+
+  resetHeldAbilities(player);
+  return player;
 }
 
 export function ensureRemotePlayer(remotePlayers, world, peerId, spawnPosition = createSpawnPosition(remotePlayers.size + 1)) {
