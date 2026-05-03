@@ -175,6 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
+import { initAudio, updateEngineSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -497,6 +498,9 @@ setupInput(keys);
 setupRoom();
 setupUi();
 initNameUI();
+window.addEventListener('click', () => {  //audio context requires user interaction to start on some browsers
+  initAudio();
+}, { once: true });
 window.addEventListener('resize', handleResize);
 requestAnimationFrame(loop);
 
@@ -1044,6 +1048,11 @@ function loop() {
       inputAccumulator += delta * 1000;
       updatePredictedLocalPlayer(delta);
       updateRemotePlayers(delta);
+      
+      // Engine sound update
+      const t = localPlayer.speedRamp ?? 0;
+      updateEngineSound(t); 
+
       sendInputPacket();
     }
 
