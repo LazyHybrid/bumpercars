@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -939,10 +939,16 @@ function sendSnapshotPacket(targetPeers) {
       abilities: serializePlayerAbilities(player),
       heldAbilities: serializeHeldAbilities(player),
       shield: { activeUntil: player.shield?.activeUntil ?? 0 },
+      collected: player.collected ?? false,
     })),
     powerups,
     bombs,
   }, targetPeers);
+
+  // Clear transient pickup flags after broadcasting them once
+  for (const player of getAllPlayers()) {
+    player.collected = false;
+  }
 }
 
 function sendMapPacket(targetPeers) {
@@ -1048,10 +1054,6 @@ function loop() {
       inputAccumulator += delta * 1000;
       updatePredictedLocalPlayer(delta);
       updateRemotePlayers(delta);
-      
-      // Engine sound update
-      const t = localPlayer.speedRamp ?? 0;
-      updateEngineSound(t); 
 
       sendInputPacket();
     }
@@ -1121,6 +1123,11 @@ function loop() {
   renderBombs();
   tryPickupPowerup();
   world.render();
+
+  // Engine sound update
+  const t = localPlayer.speedRamp ?? 0;
+  updateEngineSound(t); 
+
   requestAnimationFrame(loop);
 
   } catch (err) {
@@ -1371,8 +1378,13 @@ function applySnapshot(playerStates) {
         localPlayer.targetPosition.set(playerState.x, playerState.z);
         localPlayer.targetVelocity.set(playerState.vx, playerState.vz);
         localPlayer.targetHeading = playerState.heading;
-        applyPlayerAbilitiesSnapshot(localPlayer, playerState.abilities);
+        applyPlayerAbilitiesSnapshot(localPlayer, playerState.abilities)        
         applyHeldAbilitiesSnapshot(localPlayer, playerState.heldAbilities);
+
+        if (playerState.collected) {
+          playCollectSound();
+        }
+
         if (playerState.shield) {
           if (!localPlayer.shield) localPlayer.shield = { activeUntil: 0 };
           localPlayer.shield.activeUntil = playerState.shield.activeUntil;
@@ -1434,6 +1446,12 @@ function applySnapshot(playerStates) {
 
 function applyPickupEffect(type, player) {
   applyPowerupEffect(type, player);
+
+  player.collected = true;
+
+  if (player.isLocal) {
+    playCollectSound();
+  }
 }
 
 // Only update hostId from host packets or on join/leave

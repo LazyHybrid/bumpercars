@@ -8,6 +8,9 @@ let ctx = null;
 let engineSource = null;
 let engineGain = null;
 
+// Collect
+let collectBuffer = null;
+
 // State
 let initialized = false;
 
@@ -20,7 +23,8 @@ export async function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
   // Load engine loop
-  const engineBuffer = await loadSound('/sounds/engine_loop.wav');
+  const engineBuffer = await loadSound('/sounds/engine_loop2.wav');
+  collectBuffer = await loadSound('/sounds/collect.wav'); //declared but never read
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -53,6 +57,26 @@ export function updateEngineSound(t) {
   if (!initialized || !engineSource) return;
 
   // t = 0 → idle, 1 → full throttle
-  engineSource.playbackRate.value = 0.7 + t * 1.3;
+  engineSource.playbackRate.value = 0.6 + t * 1.1;
   engineGain.gain.value = 0.25 + t * 0.75;
+
+}
+
+// =========================
+// Play SFX
+// =========================
+export function playCollectSound() {
+  if (!initialized || !collectBuffer) return;
+
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = collectBuffer;
+
+  src.playbackRate.value = 0.95 + Math.random() * 0.3;
+
+  src.connect(ctx.destination);
+  src.start(0);
 }
