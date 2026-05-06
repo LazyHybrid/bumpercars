@@ -283,6 +283,7 @@ function resetMatch() {
   localPlayer.abilityInputState.ability2Held = false;
   resetHeldAbilities(localPlayer);
   localPlayer.shield = { activeUntil: 0 };
+  localPlayer.ghost = { activeUntil: 0 };
   localPlayer.pendingBombDrop = null;
   const spawn = getSpawnPoint(selfId);
   localPlayer.position.set(spawn.x, spawn.y);
@@ -303,6 +304,7 @@ function resetMatch() {
     player.abilityInputState.ability2Held = false;
     resetHeldAbilities(player);
     player.shield = { activeUntil: 0 };
+    player.ghost = { activeUntil: 0 };
     player.pendingBombDrop = null;
     const spawn = getSpawnPoint(peerId);
     player.position.set(spawn.x, spawn.y);
@@ -922,6 +924,7 @@ function sendSnapshotPacket(targetPeers) {
     return;
   }
 
+  const snapshotNow = performance.now() / 1000;
   sendSnapshot({
     hostId: selfId,
     phase: lobby?.state.phase ?? 'playing',
@@ -939,6 +942,7 @@ function sendSnapshotPacket(targetPeers) {
       abilities: serializePlayerAbilities(player),
       heldAbilities: serializeHeldAbilities(player),
       shield: { activeUntil: player.shield?.activeUntil ?? 0 },
+      ghost: { remainingSeconds: Math.max(0, (player.ghost?.activeUntil ?? 0) - snapshotNow) },
       collected: player.collected ?? false,
     })),
     powerups,
@@ -1389,6 +1393,12 @@ function applySnapshot(playerStates) {
           if (!localPlayer.shield) localPlayer.shield = { activeUntil: 0 };
           localPlayer.shield.activeUntil = playerState.shield.activeUntil;
         }
+        if (playerState.ghost) {
+          if (!localPlayer.ghost) localPlayer.ghost = { activeUntil: 0 };
+          localPlayer.ghost.activeUntil = playerState.ghost.remainingSeconds > 0
+            ? performance.now() / 1000 + playerState.ghost.remainingSeconds
+            : 0;
+        }
         localPlayer.pendingBombDrop = null;
         localPlayer.hasSnapshot = true;
         localPlayer.lastSeenAt = now;
@@ -1426,6 +1436,12 @@ function applySnapshot(playerStates) {
     if (playerState.shield) {
       if (!player.shield) player.shield = { activeUntil: 0 };
       player.shield.activeUntil = playerState.shield.activeUntil;
+    }
+    if (playerState.ghost) {
+      if (!player.ghost) player.ghost = { activeUntil: 0 };
+      player.ghost.activeUntil = playerState.ghost.remainingSeconds > 0
+        ? performance.now() / 1000 + playerState.ghost.remainingSeconds
+        : 0;
     }
     player.pendingBombDrop = null;
     player.lastSeenAt = now;

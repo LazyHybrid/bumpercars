@@ -681,6 +681,10 @@ body {
   z-index: 2;
 }
 
+.car--ghosted {
+  opacity: 0.4;
+}
+
 @keyframes shield-pulse {
   from {
     box-shadow:
