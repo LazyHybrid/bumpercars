@@ -53,6 +53,7 @@ export function createPlayer(id, isLocal, color, spawnPosition) {
     },
     heldAbilities: [],
     shield: { activeUntil: 0 },
+    ghost: { activeUntil: 0 },
     pendingBombDrop: null,
     hasSnapshot: isLocal,
     lastSeenAt: performance.now(),
@@ -84,6 +85,7 @@ export function syncPlayerTransform(player, now = performance.now() / 1000) {
   const y = player.position.y * WORLD_SCALE;
   player.group.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${player.heading + Math.PI}rad)`;
   player.group.classList.toggle('car--shielded', now < (player.shield?.activeUntil ?? 0));
+  player.group.classList.toggle('car--ghosted', now < (player.ghost?.activeUntil ?? 0));
 }
 
 export function colorFromId(id) {

@@ -4,6 +4,7 @@
 import {
   BASE_SPEED_SCALE,
   BOOSTED_SPEED_SCALE,
+  GHOST_DURATION_SECONDS,
   SHIELD_CHARGES_ON_PICKUP,
   SHIELD_DURATION_SECONDS,
   SPEED_BOOST_COOLDOWN_SECONDS,
@@ -78,6 +79,14 @@ function ensureShieldState(player) {
   }
 
   return player.shield;
+}
+
+function ensureGhostState(player) {
+  if (!player.ghost) {
+    player.ghost = { activeUntil: 0 };
+  }
+
+  return player.ghost;
 }
 
 function getBaseMovementSpeedScale(player) {
@@ -184,6 +193,16 @@ export function activateShield(player, now) {
 
 export function isShieldActive(player, now) {
   return now < (player.shield?.activeUntil ?? 0);
+}
+
+export function activateGhost(player, now) {
+  const ghostState = ensureGhostState(player);
+  ghostState.activeUntil = now + GHOST_DURATION_SECONDS;
+  return true;
+}
+
+export function isGhostActive(player, now) {
+  return now < (player.ghost?.activeUntil ?? 0);
 }
 
 export function getShieldKnockbackScale(targetShielded, sourceShielded) {
@@ -461,6 +480,8 @@ export function activateHeldAbilitySlot(player, slotIndex, now = performance.now
   let activated = false;
   if (entry.type === 'shield') {
     activated = activateShield(player, now);
+  } else if (entry.type === 'ghost') {
+    activated = activateGhost(player, now);
   } else if (entry.type === 'bomb') {
     activated = activateBomb(player, now);
   }

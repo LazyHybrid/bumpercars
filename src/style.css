@@ -253,6 +253,12 @@ body {
   filter: drop-shadow(0 0 14px rgba(90, 204, 255, 0.6));
 }
 
+.ability-slot[data-ability="ghost"] .ability-slot__icon {
+  color: #c9efff;
+  filter: drop-shadow(0 0 14px rgba(170, 235, 255, 0.58));
+  opacity: 0.82;
+}
+
 .ability-slot[data-ability="bomb"] .ability-slot__icon {
   color: #ffcf57;
   filter: drop-shadow(0 0 14px rgba(255, 177, 58, 0.62));
@@ -679,6 +685,10 @@ body {
   animation: shield-pulse 0.7s ease-in-out infinite alternate;
   pointer-events: none;
   z-index: 2;
+}
+
+.car--ghosted {
+  opacity: 0.4;
 }
 
 @keyframes shield-pulse {

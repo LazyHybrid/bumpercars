@@ -12,7 +12,12 @@ import {
   BOOSTED_SPEED_SCALE,
   SPEED_RAMP_TIME_SECONDS,
 } from './config';
-import { getShieldKnockbackScale, getSpeedBoostScale, isShieldActive } from './powerups/effects';
+import {
+  getShieldKnockbackScale,
+  getSpeedBoostScale,
+  isGhostActive,
+  isShieldActive,
+} from './powerups/effects';
 import { clamp, lerp, Vec2 } from './math';
 import { getActiveMap, mapWallToWorldRect } from './map-data';
 
@@ -70,6 +75,10 @@ export function resolveArenaCollision() {
 }
 
 export function resolveMapWallCollisions(player) {
+  if (isGhostActive(player, performance.now() / 1000)) {
+    return;
+  }
+
   const activeMap = getActiveMap();
 
   for (const wall of activeMap.walls) {
@@ -78,6 +87,10 @@ export function resolveMapWallCollisions(player) {
 }
 
 export function resolvePlayerCollision(playerA, playerB, now = performance.now() / 1000) {
+  if (isGhostActive(playerA, now) || isGhostActive(playerB, now)) {
+    return;
+  }
+
   const aShielded = isShieldActive(playerA, now);
   const bShielded = isShieldActive(playerB, now);
 
