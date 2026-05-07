@@ -7,6 +7,8 @@ let ctx = null;
 // Engine sound
 let engineSource = null;
 let engineGain = null;
+let smoothedThrottle = 0;
+let smoothedBoost = 0;
 
 // Collect
 let collectBuffer = null;
@@ -23,8 +25,8 @@ export async function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
   // Load engine loop
-  const engineBuffer = await loadSound('/sounds/engine_loop2.wav');
-  collectBuffer = await loadSound('/sounds/collect.wav'); //declared but never read
+  const engineBuffer = await loadSound("/sounds/engine_loop2.wav");
+  collectBuffer = await loadSound("/sounds/collect.wav"); //declared but never read
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -38,7 +40,7 @@ export async function initAudio() {
 
   initialized = true;
 
-  console.log('[Audio] Initialized');
+  console.log("[Audio] Initialized");
 }
 
 // =========================
@@ -53,13 +55,20 @@ async function loadSound(url) {
 // =========================
 // Update engine sound
 // =========================
-export function updateEngineSound(t) {
+export function updateEngineSound(t, boost = 0) {
   if (!initialized || !engineSource) return;
 
-  // t = 0 → idle, 1 → full throttle
-  engineSource.playbackRate.value = 0.6 + t * 1.1;
-  engineGain.gain.value = 0.25 + t * 0.75;
+  // Smooth throttle changes
+  smoothedThrottle += (t - smoothedThrottle) * 0.08;
 
+  // Boost decays slower for satisfying engine falloff
+  smoothedBoost += (boost - smoothedBoost) * 0.04;
+
+  const boostPitch = smoothedBoost * 0.8;
+
+  engineSource.playbackRate.value = 0.6 + smoothedThrottle * 1.1 + boostPitch;
+
+  engineGain.gain.value = 0.25 + smoothedThrottle * 0.75 + smoothedBoost * 0.15;
 }
 
 // =========================
@@ -68,7 +77,7 @@ export function updateEngineSound(t) {
 export function playCollectSound() {
   if (!initialized || !collectBuffer) return;
 
-  if (ctx.state === 'suspended') {
+  if (ctx.state === "suspended") {
     ctx.resume();
   }
 

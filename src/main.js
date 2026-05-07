@@ -1129,8 +1129,15 @@ function loop() {
   world.render();
 
   // Engine sound update
-  const t = localPlayer.speedRamp ?? 0;
-  updateEngineSound(t); 
+  const t = localPlayer.speedRamp || 0;
+
+  const boostActive =
+    localPlayer.abilities?.speedBoost?.activeUntil > (performance.now() / 1000);
+
+  updateEngineSound(
+    t,
+    boostActive ? 1 : 0
+  );
 
   requestAnimationFrame(loop);
 
