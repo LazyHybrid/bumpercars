@@ -10,8 +10,10 @@ let engineGain = null;
 let smoothedThrottle = 0;
 let smoothedBoost = 0;
 
-// Collect
+// Effects
 let collectBuffer = null;
+let collisionBuffer = null;
+let lastCollisionSoundTime = 0;
 
 // State
 let initialized = false;
@@ -26,7 +28,8 @@ export async function initAudio() {
 
   // Load engine loop
   const engineBuffer = await loadSound("/sounds/engine_loop2.wav");
-  collectBuffer = await loadSound("/sounds/collect.wav"); //declared but never read
+  collectBuffer = await loadSound("/sounds/collect.wav");
+  collisionBuffer = await loadSound("/sounds/collision.wav");
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -87,5 +90,37 @@ export function playCollectSound() {
   src.playbackRate.value = 0.95 + Math.random() * 0.3;
 
   src.connect(ctx.destination);
+  src.start(0);
+}
+
+export function playCollisionSound(strength = 1) {
+  if (!initialized || !collisionBuffer) return;
+
+  const now = performance.now();
+
+  // Prevent audio spam
+  if (now - lastCollisionSoundTime < 80) {
+    return;
+  }
+
+  lastCollisionSoundTime = now;
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = collisionBuffer;
+
+  // Randomize pitch slightly
+  src.playbackRate.value = 0.9 + Math.random() * 0.25;
+
+  // Volume scales with impact
+  const gain = ctx.createGain();
+
+  gain.gain.value = Math.min(1, 0.2 + strength * 0.8);
+
+  src.connect(gain).connect(ctx.destination);
+
   src.start(0);
 }
