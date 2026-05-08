@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -944,14 +944,16 @@ function sendSnapshotPacket(targetPeers) {
       shield: { activeUntil: player.shield?.activeUntil ?? 0 },
       ghost: { remainingSeconds: Math.max(0, (player.ghost?.activeUntil ?? 0) - snapshotNow) },
       collected: player.collected ?? false,
+      collided: player.collided ?? false,
     })),
     powerups,
     bombs,
   }, targetPeers);
 
-  // Clear transient pickup flags after broadcasting them once
+  // Clear transient event flags after broadcasting them once
   for (const player of getAllPlayers()) {
     player.collected = false;
+    player.collided = false;
   }
 }
 
@@ -1129,8 +1131,15 @@ function loop() {
   world.render();
 
   // Engine sound update
-  const t = localPlayer.speedRamp ?? 0;
-  updateEngineSound(t); 
+  const t = localPlayer.speedRamp || 0;
+
+  const boostActive =
+    localPlayer.abilities?.speedBoost?.activeUntil > (performance.now() / 1000);
+
+  updateEngineSound(
+    t,
+    boostActive ? 1 : 0
+  );
 
   requestAnimationFrame(loop);
 
@@ -1301,14 +1310,37 @@ function simulateAuthoritativeStep(delta) {
     const now = performance.now() / 1000;
     updatePlayerAbilityInput(player, input, now);
     simulateMovement(player, input, delta, now);
+    
+    // Check for collisions with arena and walls
+    const prevPosX = player.position.x;
+    const prevPosY = player.position.y;
     resolveArenaCollision(player);
     resolveMapWallCollisions(player);
+    const arenaOrWallCollided = prevPosX !== player.position.x || prevPosY !== player.position.y;
+    if (arenaOrWallCollided && !player.collided) {
+      playCollisionSound();
+      player.collided = true;
+    }
   }
 
   // Only resolve collisions between alive players
   for (let index = 0; index < players.length; index += 1) {
     for (let otherIndex = index + 1; otherIndex < players.length; otherIndex += 1) {
+      const prevPos1X = players[index].position.x;
+      const prevPos1Y = players[index].position.y;
+      const prevPos2X = players[otherIndex].position.x;
+      const prevPos2Y = players[otherIndex].position.y;
+      
       resolvePlayerCollision(players[index], players[otherIndex]);
+      
+      // Check if this collision event moved either player (indicates contact)
+      const didCollide1 = prevPos1X !== players[index].position.x || prevPos1Y !== players[index].position.y;
+      const didCollide2 = prevPos2X !== players[otherIndex].position.x || prevPos2Y !== players[otherIndex].position.y;
+      if ((didCollide1 || didCollide2) && (!players[index].collided || !players[otherIndex].collided)) {
+        playCollisionSound();
+        players[index].collided = true;
+        players[otherIndex].collided = true;
+      }
     }
   }
 
@@ -1388,6 +1420,10 @@ function applySnapshot(playerStates) {
 
         if (playerState.collected) {
           playCollectSound();
+        }
+
+        if (playerState.collided) {
+          playCollisionSound();
         }
 
         if (playerState.shield) {
