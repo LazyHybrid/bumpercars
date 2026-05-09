@@ -2,6 +2,8 @@
 // Sound Manager (basic)
 // =========================
 
+import { speedBoost } from "../powerups/effects";
+
 let ctx = null;
 
 // Engine sound
@@ -14,6 +16,7 @@ let smoothedBoost = 0;
 let collectBuffer = null;
 let collisionBuffer = null;
 let lastCollisionSoundTime = 0;
+let speedBoostBuffer = null;
 
 // State
 let initialized = false;
@@ -26,10 +29,11 @@ export async function initAudio() {
 
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // Load engine loop
+  // Load samples
   const engineBuffer = await loadSound("/sounds/engine_loop2.wav");
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
+  speedBoostBuffer = await loadSound("/sounds/speed_boost2.wav");
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -119,6 +123,29 @@ export function playCollisionSound(strength = 1) {
   const gain = ctx.createGain();
 
   gain.gain.value = Math.min(1, 0.2 + strength * 0.8);
+
+  src.connect(gain).connect(ctx.destination);
+
+  src.start(0);
+}
+
+export function playSpeedBoostSound() {
+  if (!initialized || !speedBoostBuffer) return;
+
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = speedBoostBuffer;
+
+  // Small variation to avoid repetition
+  src.playbackRate.value =
+    0.96
+    + Math.random() * 0.08;
+
+  const gain = ctx.createGain();
+  gain.gain.value = 0.8;
 
   src.connect(gain).connect(ctx.destination);
 

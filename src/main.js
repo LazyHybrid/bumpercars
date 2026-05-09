@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -1194,10 +1194,19 @@ function updateHeldAbilitySlots() {
 }
 }
 
+function updateLocalPlayerAbilityInput(player, input, now) {
+  const speedBoostHeld = Boolean(input?.speedBoost);
+  const boostJustPressed = speedBoostHeld && !player.abilityInputState?.speedBoostHeld;
+  updatePlayerAbilityInput(player, input, now);
+  if (boostJustPressed) {
+    playSpeedBoostSound();
+  }
+}
+
 function updatePredictedLocalPlayer(delta) {
   const input = readCurrentInputState(keys);
   const now = performance.now() / 1000;
-  updatePlayerAbilityInput(localPlayer, input, now);
+  updateLocalPlayerAbilityInput(localPlayer, input, now);
   simulateMovement(localPlayer, input, delta, now);
   resolveArenaCollision(localPlayer);
   resolveMapWallCollisions(localPlayer);
@@ -1308,7 +1317,11 @@ function simulateAuthoritativeStep(delta) {
       ? readCurrentInputState(keys)
       : (player.input ?? { forward: false, backward: false, left: false, right: false, strafeLeft: false, strafeRight: false });
     const now = performance.now() / 1000;
-    updatePlayerAbilityInput(player, input, now);
+    if (player.isLocal) {
+      updateLocalPlayerAbilityInput(player, input, now);
+    } else {
+      updatePlayerAbilityInput(player, input, now);
+    }
     simulateMovement(player, input, delta, now);
     
     // Check for collisions with arena and walls
