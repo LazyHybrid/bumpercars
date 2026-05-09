@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound, startShieldSound, stopShieldSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -1117,6 +1117,16 @@ function loop() {
     performance.now() / 1000
   );
   updateHeldAbilitySlots();
+
+  const shieldActive =
+    (localPlayer.shield?.activeUntil || 0) >
+    (performance.now() / 1000);
+
+  if (shieldActive) {
+    startShieldSound();
+  } else {
+    stopShieldSound();
+  }
 
   // Camera logic: follow car in play mode, free move in edit mode or if eliminated
   if (isEditMode || !playerLives[selfId]?.isAlive()) {

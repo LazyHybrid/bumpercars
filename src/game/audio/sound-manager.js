@@ -17,6 +17,11 @@ let collectBuffer = null;
 let collisionBuffer = null;
 let lastCollisionSoundTime = 0;
 let speedBoostBuffer = null;
+let shieldBuffer = null;
+
+let shieldSource = null;
+let shieldGain = null;
+let shieldPlaying = false;
 
 // State
 let initialized = false;
@@ -34,6 +39,7 @@ export async function initAudio() {
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
   speedBoostBuffer = await loadSound("/sounds/speed_boost2.wav");
+  shieldBuffer = await loadSound("/sounds/shield4.wav");
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -150,4 +156,57 @@ export function playSpeedBoostSound() {
   src.connect(gain).connect(ctx.destination);
 
   src.start(0);
+}
+
+export function startShieldSound() {
+  if (!initialized || !shieldBuffer) return;
+  if (shieldPlaying) return;
+
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
+  shieldSource = ctx.createBufferSource();
+  shieldSource.buffer = shieldBuffer;
+  shieldSource.loop = true;
+
+  shieldGain = ctx.createGain();
+  shieldGain.gain.value = 0;
+
+  shieldSource.connect(shieldGain).connect(ctx.destination);
+
+  shieldSource.start(0);
+
+  // Smooth fade in
+  shieldGain.gain.linearRampToValueAtTime(
+    0.45,
+    ctx.currentTime + 0.2
+  );
+
+  shieldPlaying = true;
+}
+
+export function stopShieldSound() {
+  if (!shieldPlaying || !shieldSource || !shieldGain) {
+    return;
+  }
+
+  // Smooth fade out
+  shieldGain.gain.linearRampToValueAtTime(
+    0,
+    ctx.currentTime + 0.25
+  );
+
+  const sourceToStop = shieldSource;
+
+  setTimeout(() => {
+    try {
+      sourceToStop.stop();
+    } catch {}
+  }, 300);
+
+  shieldSource = null;
+  shieldGain = null;
+
+  shieldPlaying = false;
 }
