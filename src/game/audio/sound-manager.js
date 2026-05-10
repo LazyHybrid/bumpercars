@@ -11,6 +11,8 @@ let engineSource = null;
 let engineGain = null;
 let smoothedThrottle = 0;
 let smoothedBoost = 0;
+let idleStartTime = null;
+let engineStopped = false;
 
 // Effects
 let collectBuffer = null;
@@ -42,11 +44,11 @@ export async function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
   // Load samples
-  const engineBuffer = await loadSound("/sounds/engine_loop2.wav");
+  const engineBuffer = await loadSound("/sounds/engine_loop6.wav");
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
   speedBoostBuffer = await loadSound("/sounds/speed_boost.wav");
-  shieldBuffer = await loadSound("/sounds/shield5.wav");
+  shieldBuffer = await loadSound("/sounds/shield4.wav");
   explosionBuffer = await loadSound("/sounds/explosion.wav");
   ghostBuffer = await loadSound("/sounds/ghost.wav");
 
@@ -55,7 +57,7 @@ export async function initAudio() {
   engineSource.loop = true;
 
   engineGain = ctx.createGain();
-  engineGain.gain.value = 0.3;
+  engineGain.gain.value = null;
 
   engineSource.connect(engineGain).connect(ctx.destination);
   engineSource.start(0);
@@ -78,19 +80,66 @@ async function loadSound(url) {
 // Update engine sound
 // =========================
 export function updateEngineSound(t, boost = 0) {
-  if (!initialized || !engineSource) return;
+  if (!initialized || !engineSource || !engineGain) {
+    return;
+  }
 
-  // Smooth throttle changes
+  if (ghostPlaying) {
+    // Mute engine when ghosting
+    engineGain.gain.value += (0.1 - engineGain.gain.value) * 0.1;
+    return;
+  }
+
+  const isIdle = t <= 0.01;
+
+  // Smooth throttle
   smoothedThrottle += (t - smoothedThrottle) * 0.08;
 
-  // Boost decays slower for satisfying engine falloff
+  // Smooth boost decay
   smoothedBoost += (boost - smoothedBoost) * 0.04;
 
   const boostPitch = smoothedBoost * 0.8;
 
-  engineSource.playbackRate.value = 0.6 + smoothedThrottle * 1.1 + boostPitch;
+  // Idle timer
+  if (isIdle) {
+    if (idleStartTime === null) {
+      idleStartTime = performance.now();
+    }
 
-  engineGain.gain.value = 0.25 + smoothedThrottle * 0.75 + smoothedBoost * 0.15;
+    // After 2s idle -> fade engine out
+    if (performance.now() - idleStartTime > 2000) {
+      engineStopped = true;
+    }
+  } else {
+    idleStartTime = null;
+
+    // Engine wakes instantly when throttle pressed
+    if (engineStopped) {
+      engineStopped = false;
+    }
+  }
+
+  // Pitch always updates
+  engineSource.playbackRate.value =
+    0.6
+    + smoothedThrottle * 1.1
+    + boostPitch;
+
+  // Target volume
+  let targetGain;
+
+  if (engineStopped) {
+    targetGain = 0;
+  } else {
+    targetGain =
+      0.25
+      + smoothedThrottle * 0.75
+      + smoothedBoost * 0.15;
+  }
+
+  // Smooth gain transition
+  engineGain.gain.value +=
+    (targetGain - engineGain.gain.value) * 0.05;
 }
 
 // =========================
