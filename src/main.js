@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -1072,6 +1072,7 @@ function loop() {
       // Local player
       if (playerLives[selfId].isAlive() && !isOnFloorOrWall(localPlayer, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
         playerLives[selfId].loseLife(LIFE_TICK_DAMAGE);
+        playDamageSound();
         if (!playerLives[selfId].isAlive()) {
           // Despawn car
           if (localPlayer.group.parentNode) world.remove(localPlayer.group);
@@ -1087,6 +1088,7 @@ function loop() {
       for (const [peerId, player] of remotePlayers.entries()) {
         if (playerLives[peerId].isAlive() && !isOnFloorOrWall(player, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
           playerLives[peerId].loseLife(LIFE_TICK_DAMAGE);
+          playDamageSound();
           if (!playerLives[peerId].isAlive()) {
             // Despawn car
             if (player.group.parentNode) world.remove(player.group);

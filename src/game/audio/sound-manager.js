@@ -18,6 +18,7 @@ let engineStopped = false;
 let collectBuffer = null;
 let collisionBuffer = null;
 let lastCollisionSoundTime = 0;
+let damageBuffer = null;
 let speedBoostBuffer = null;
 let shieldBuffer = null;
 let ghostBuffer = null;
@@ -47,10 +48,11 @@ export async function initAudio() {
   const engineBuffer = await loadSound("/sounds/engine_loop6.wav");
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
+  damageBuffer = await loadSound("/sounds/damage.wav");
   speedBoostBuffer = await loadSound("/sounds/speed_boost.wav");
   shieldBuffer = await loadSound("/sounds/shield4.wav");
   explosionBuffer = await loadSound("/sounds/explosion.wav");
-  ghostBuffer = await loadSound("/sounds/ghost.wav");
+  ghostBuffer = await loadSound("/sounds/ghost2.wav");
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -190,6 +192,26 @@ export function playCollisionSound(strength = 1) {
 
   src.connect(gain).connect(ctx.destination);
 
+  src.start(0);
+}
+
+export function playDamageSound() {
+  if (!initialized || !damageBuffer) return;
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = damageBuffer;
+
+  // slightly lower pitch and add variation to avoid repetition
+  src.playbackRate.value = 0.9 + Math.random() * 0.8;
+
+  const gain = ctx.createGain();
+  gain.gain.value = 0.7;
+
+  src.connect(gain).connect(ctx.destination);
   src.start(0);
 }
 
