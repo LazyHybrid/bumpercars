@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -1074,6 +1074,7 @@ function loop() {
         playerLives[selfId].loseLife(LIFE_TICK_DAMAGE);
         playDamageSound();
         if (!playerLives[selfId].isAlive()) {
+          playDespawnSound();
           // Despawn car
           if (localPlayer.group.parentNode) world.remove(localPlayer.group);
           // Award 1 point to all alive remote players
@@ -1090,6 +1091,7 @@ function loop() {
           playerLives[peerId].loseLife(LIFE_TICK_DAMAGE);
           playDamageSound();
           if (!playerLives[peerId].isAlive()) {
+            playDespawnSound();
             // Despawn car
             if (player.group.parentNode) world.remove(player.group);
             // Award 1 point to all alive players except eliminated
@@ -1155,10 +1157,15 @@ function loop() {
   const boostActive =
     localPlayer.abilities?.speedBoost?.activeUntil > (performance.now() / 1000);
 
-  updateEngineSound(
-    t,
-    boostActive ? 1 : 0
-  );
+  if (playerLives[selfId]?.isAlive()) {
+    updateEngineSound(
+      t,
+      boostActive ? 1 : 0
+    );
+  } else {
+    localPlayer.speedRamp = 0;
+    updateEngineSound(0, 0);
+  }
 
   requestAnimationFrame(loop);
 
