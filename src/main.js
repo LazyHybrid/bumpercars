@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound, startShieldSound, stopShieldSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -1118,14 +1118,21 @@ function loop() {
   );
   updateHeldAbilitySlots();
 
-  const shieldActive =
-    (localPlayer.shield?.activeUntil || 0) >
-    (performance.now() / 1000);
+  const nowSeconds = performance.now() / 1000;
+
+  const shieldActive = (localPlayer.shield?.activeUntil || 0) > nowSeconds;
+  const ghostActive = (localPlayer.ghost?.activeUntil || 0) > nowSeconds;
 
   if (shieldActive) {
     startShieldSound();
   } else {
     stopShieldSound();
+  }
+
+  if (ghostActive) {
+    startGhostSound();
+  } else {
+    stopGhostSound();
   }
 
   // Camera logic: follow car in play mode, free move in edit mode or if eliminated
@@ -1374,6 +1381,17 @@ function simulateAuthoritativeStep(delta) {
   }
 
   const bombUpdate = updateBombsState(bombs, players, getActiveMap(), now);
+
+  // Play explosion sound when a bomb transitions into its exploded state
+  for (const nextBomb of bombUpdate.bombs) {
+    if (nextBomb.explodeAt) {
+      const previousBomb = bombs.find((b) => b.id === nextBomb.id);
+      if (!previousBomb?.explodeAt) {
+        playExplosionSound();
+      }
+    }
+  }
+
   bombs = bombUpdate.bombs;
 
   if (bombUpdate.mapChanged) {
@@ -1425,11 +1443,19 @@ function applySnapshot(playerStates) {
     window.syncedPowerups = powerupList;
   }
   if (!isHost() && Array.isArray(bombList)) {
+    const previousSyncedBombs = window.syncedBombs ?? [];
     window.syncedBombs = reconcileSyncedBombVisualTiming(
       window.syncedBombs,
       bombList,
       performance.now() / 1000
     );
+    for (const bomb of window.syncedBombs) {
+      if (!bomb.explodeAt) continue;
+      const prevBomb = previousSyncedBombs.find((prev) => prev.id === bomb.id && prev.explodeAt);
+      if (!prevBomb) {
+        playExplosionSound();
+      }
+    }
   }
 
   for (const playerState of playerList) {

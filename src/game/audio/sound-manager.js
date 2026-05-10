@@ -18,6 +18,13 @@ let collisionBuffer = null;
 let lastCollisionSoundTime = 0;
 let speedBoostBuffer = null;
 let shieldBuffer = null;
+let ghostBuffer = null;
+
+let ghostSource = null;
+let ghostGain = null;
+let ghostPlaying = false;
+
+let explosionBuffer = null;
 
 let shieldSource = null;
 let shieldGain = null;
@@ -38,8 +45,10 @@ export async function initAudio() {
   const engineBuffer = await loadSound("/sounds/engine_loop2.wav");
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
-  speedBoostBuffer = await loadSound("/sounds/speed_boost2.wav");
-  shieldBuffer = await loadSound("/sounds/shield4.wav");
+  speedBoostBuffer = await loadSound("/sounds/speed_boost.wav");
+  shieldBuffer = await loadSound("/sounds/shield5.wav");
+  explosionBuffer = await loadSound("/sounds/explosion.wav");
+  ghostBuffer = await loadSound("/sounds/ghost.wav");
 
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
@@ -209,4 +218,73 @@ export function stopShieldSound() {
   shieldGain = null;
 
   shieldPlaying = false;
+}
+
+export function playExplosionSound() {
+  if (!initialized || !explosionBuffer) return;
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = explosionBuffer;
+
+  src.playbackRate.value = 0.95 + Math.random() * 0.3;
+
+  src.connect(ctx.destination);
+  src.start(0);
+}
+
+export function startGhostSound() {
+  if (!initialized || !ghostBuffer) return;
+  if (ghostPlaying) return;
+
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
+  ghostSource = ctx.createBufferSource();
+  ghostSource.buffer = ghostBuffer;
+  ghostSource.loop = true;
+
+  ghostGain = ctx.createGain();
+  ghostGain.gain.value = 0;
+
+  ghostSource.connect(ghostGain).connect(ctx.destination);
+
+  ghostSource.start(0);
+
+  // Smooth fade in
+  ghostGain.gain.linearRampToValueAtTime(
+    0.45,
+    ctx.currentTime + 0.2
+  );
+
+  ghostPlaying = true;
+}
+
+export function stopGhostSound() {
+  if (!ghostPlaying || !ghostSource || !ghostGain) {
+    return;
+  }
+
+  // Smooth fade out
+  ghostGain.gain.linearRampToValueAtTime(
+    0,
+    ctx.currentTime + 0.25
+  );
+
+  const sourceToStop = ghostSource;
+
+  setTimeout(() => {
+    try {
+      sourceToStop.stop();
+    } catch {}
+  }, 300);
+
+  ghostSource = null;
+  ghostGain = null;
+
+  ghostPlaying = false;
 }
