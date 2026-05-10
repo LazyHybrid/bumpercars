@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playBombDropSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -945,6 +945,7 @@ function sendSnapshotPacket(targetPeers) {
       ghost: { remainingSeconds: Math.max(0, (player.ghost?.activeUntil ?? 0) - snapshotNow) },
       collected: player.collected ?? false,
       collided: player.collided ?? false,
+      bombDropped: player.bombDropped ?? false
     })),
     powerups,
     bombs,
@@ -954,6 +955,7 @@ function sendSnapshotPacket(targetPeers) {
   for (const player of getAllPlayers()) {
     player.collected = false;
     player.collided = false;
+    player.bombDropped = false;
   }
 }
 
@@ -1072,7 +1074,9 @@ function loop() {
       // Local player
       if (playerLives[selfId].isAlive() && !isOnFloorOrWall(localPlayer, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
         playerLives[selfId].loseLife(LIFE_TICK_DAMAGE);
+        playDamageSound();
         if (!playerLives[selfId].isAlive()) {
+          playDespawnSound();
           // Despawn car
           if (localPlayer.group.parentNode) world.remove(localPlayer.group);
           // Award 1 point to all alive remote players
@@ -1087,7 +1091,9 @@ function loop() {
       for (const [peerId, player] of remotePlayers.entries()) {
         if (playerLives[peerId].isAlive() && !isOnFloorOrWall(player, { ...map, MAP_WORLD_SIZE, MAP_CELL_SIZE })) {
           playerLives[peerId].loseLife(LIFE_TICK_DAMAGE);
+          playDamageSound();
           if (!playerLives[peerId].isAlive()) {
+            playDespawnSound();
             // Despawn car
             if (player.group.parentNode) world.remove(player.group);
             // Award 1 point to all alive players except eliminated
@@ -1118,6 +1124,23 @@ function loop() {
   );
   updateHeldAbilitySlots();
 
+  const nowSeconds = performance.now() / 1000;
+
+  const shieldActive = (localPlayer.shield?.activeUntil || 0) > nowSeconds;
+  const ghostActive = (localPlayer.ghost?.activeUntil || 0) > nowSeconds;
+
+  if (shieldActive) {
+    startShieldSound();
+  } else {
+    stopShieldSound();
+  }
+
+  if (ghostActive) {
+    startGhostSound();
+  } else {
+    stopGhostSound();
+  }
+
   // Camera logic: follow car in play mode, free move in edit mode or if eliminated
   if (isEditMode || !playerLives[selfId]?.isAlive()) {
     updateEditorView(delta);
@@ -1136,10 +1159,15 @@ function loop() {
   const boostActive =
     localPlayer.abilities?.speedBoost?.activeUntil > (performance.now() / 1000);
 
-  updateEngineSound(
-    t,
-    boostActive ? 1 : 0
-  );
+  if (playerLives[selfId]?.isAlive()) {
+    updateEngineSound(
+      t,
+      boostActive ? 1 : 0
+    );
+  } else {
+    localPlayer.speedRamp = 0;
+    updateEngineSound(0, 0);
+  }
 
   requestAnimationFrame(loop);
 
@@ -1194,10 +1222,19 @@ function updateHeldAbilitySlots() {
 }
 }
 
+function updateLocalPlayerAbilityInput(player, input, now) {
+  const speedBoostHeld = Boolean(input?.speedBoost);
+  const boostJustPressed = speedBoostHeld && !player.abilityInputState?.speedBoostHeld;
+  updatePlayerAbilityInput(player, input, now);
+  if (boostJustPressed) {
+    playSpeedBoostSound();
+  }
+}
+
 function updatePredictedLocalPlayer(delta) {
   const input = readCurrentInputState(keys);
   const now = performance.now() / 1000;
-  updatePlayerAbilityInput(localPlayer, input, now);
+  updateLocalPlayerAbilityInput(localPlayer, input, now);
   simulateMovement(localPlayer, input, delta, now);
   resolveArenaCollision(localPlayer);
   resolveMapWallCollisions(localPlayer);
@@ -1308,7 +1345,11 @@ function simulateAuthoritativeStep(delta) {
       ? readCurrentInputState(keys)
       : (player.input ?? { forward: false, backward: false, left: false, right: false, strafeLeft: false, strafeRight: false });
     const now = performance.now() / 1000;
-    updatePlayerAbilityInput(player, input, now);
+    if (player.isLocal) {
+      updateLocalPlayerAbilityInput(player, input, now);
+    } else {
+      updatePlayerAbilityInput(player, input, now);
+    }
     simulateMovement(player, input, delta, now);
     
     // Check for collisions with arena and walls
@@ -1348,9 +1389,21 @@ function simulateAuthoritativeStep(delta) {
   const droppedBombs = collectPendingBombDrops(players, now);
   if (droppedBombs.length > 0) {
     bombs.push(...droppedBombs);
+    playBombDropSound();
   }
 
   const bombUpdate = updateBombsState(bombs, players, getActiveMap(), now);
+
+  // Play explosion sound when a bomb transitions into its exploded state
+  for (const nextBomb of bombUpdate.bombs) {
+    if (nextBomb.explodeAt) {
+      const previousBomb = bombs.find((b) => b.id === nextBomb.id);
+      if (!previousBomb?.explodeAt) {
+        playExplosionSound();
+      }
+    }
+  }
+
   bombs = bombUpdate.bombs;
 
   if (bombUpdate.mapChanged) {
@@ -1402,11 +1455,19 @@ function applySnapshot(playerStates) {
     window.syncedPowerups = powerupList;
   }
   if (!isHost() && Array.isArray(bombList)) {
+    const previousSyncedBombs = window.syncedBombs ?? [];
     window.syncedBombs = reconcileSyncedBombVisualTiming(
       window.syncedBombs,
       bombList,
       performance.now() / 1000
     );
+    for (const bomb of window.syncedBombs) {
+      if (!bomb.explodeAt) continue;
+      const prevBomb = previousSyncedBombs.find((prev) => prev.id === bomb.id && prev.explodeAt);
+      if (!prevBomb) {
+        playExplosionSound();
+      }
+    }
   }
 
   for (const playerState of playerList) {
@@ -1424,6 +1485,10 @@ function applySnapshot(playerStates) {
 
         if (playerState.collided) {
           playCollisionSound();
+        }
+
+        if (playerState.bombDropped) {
+          playBombDropSound();
         }
 
         if (playerState.shield) {
