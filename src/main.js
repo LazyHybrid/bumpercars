@@ -175,7 +175,7 @@ import { createMapEditor } from './game/map-editor';
 import { Vec2 } from './game/math';
 import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
 import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playBombDropSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
 import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
 import { createLobbyController } from './lobby/lobby-controller';
 import { createLobbyUI } from './ui/lobby-ui';
@@ -945,6 +945,7 @@ function sendSnapshotPacket(targetPeers) {
       ghost: { remainingSeconds: Math.max(0, (player.ghost?.activeUntil ?? 0) - snapshotNow) },
       collected: player.collected ?? false,
       collided: player.collided ?? false,
+      bombDropped: player.bombDropped ?? false
     })),
     powerups,
     bombs,
@@ -954,6 +955,7 @@ function sendSnapshotPacket(targetPeers) {
   for (const player of getAllPlayers()) {
     player.collected = false;
     player.collided = false;
+    player.bombDropped = false;
   }
 }
 
@@ -1387,6 +1389,7 @@ function simulateAuthoritativeStep(delta) {
   const droppedBombs = collectPendingBombDrops(players, now);
   if (droppedBombs.length > 0) {
     bombs.push(...droppedBombs);
+    playBombDropSound();
   }
 
   const bombUpdate = updateBombsState(bombs, players, getActiveMap(), now);
@@ -1482,6 +1485,10 @@ function applySnapshot(playerStates) {
 
         if (playerState.collided) {
           playCollisionSound();
+        }
+
+        if (playerState.bombDropped) {
+          playBombDropSound();
         }
 
         if (playerState.shield) {

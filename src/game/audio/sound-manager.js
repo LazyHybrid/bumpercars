@@ -28,6 +28,7 @@ let ghostSource = null;
 let ghostGain = null;
 let ghostPlaying = false;
 
+let bombDropBuffer = null;
 let explosionBuffer = null;
 
 let shieldSource = null;
@@ -46,16 +47,16 @@ export async function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
 
   // Load samples
-  const engineBuffer = await loadSound("/sounds/engine_loop6.wav");
+  const engineBuffer = await loadSound("/sounds/engine_loop.wav");
   collectBuffer = await loadSound("/sounds/collect.wav");
   collisionBuffer = await loadSound("/sounds/collision.wav");
   damageBuffer = await loadSound("/sounds/damage.wav");
   despawnBuffer = await loadSound("/sounds/despawn.wav");
   speedBoostBuffer = await loadSound("/sounds/speed_boost.wav");
-  shieldBuffer = await loadSound("/sounds/shield4.wav");
+  shieldBuffer = await loadSound("/sounds/shield.wav");
   explosionBuffer = await loadSound("/sounds/explosion.wav");
-  ghostBuffer = await loadSound("/sounds/ghost2.wav");
-
+  ghostBuffer = await loadSound("/sounds/ghost.wav");
+  bombDropBuffer = await loadSound("/sounds/bomb_drop.wav");
   engineSource = ctx.createBufferSource();
   engineSource.buffer = engineBuffer;
   engineSource.loop = true;
@@ -201,7 +202,7 @@ export function playDamageSound() {
   src.buffer = damageBuffer;
 
   // slightly lower pitch and add variation to avoid repetition
-  src.playbackRate.value = 0.9 + Math.random() * 0.4;
+  src.playbackRate.value = 0.9 + Math.random() * 0.2;
 
   const gain = ctx.createGain();
   gain.gain.value = 0.7;
@@ -293,6 +294,24 @@ export function stopShieldSound() {
   shieldGain = null;
 
   shieldPlaying = false;
+}
+
+export function playBombDropSound() {
+  if (!initialized || !bombDropBuffer) return;
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = bombDropBuffer;
+
+  const gain = ctx.createGain();
+  gain.gain.value = 0.7;
+
+  src.connect(gain).connect(ctx.destination);
+
+  src.start(0);
 }
 
 export function playExplosionSound() {
