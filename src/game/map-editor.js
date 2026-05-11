@@ -28,6 +28,7 @@ export function createMapEditor(sceneRoot, world, ui) {
     arenaVariant: storedMap.arenaVariant,
     mode: 'floor',
     floors: createCellsFromTiles(storedMap.floors, 1),
+    ice: createCellsFromTiles(storedMap.ice),
     cells: createCellsFromWalls(storedMap.walls),
     spawns: storedMap.spawns,
     selectedSpawnIndex: 0,
@@ -77,6 +78,7 @@ export function createMapEditor(sceneRoot, world, ui) {
       forEachBrushCell(row, column, (brushRow, brushColumn) => {
         state.floors[brushRow][brushColumn] = nextFloorValue;
         if (!nextFloorValue) {
+          state.ice[brushRow][brushColumn] = 0;
           state.cells[brushRow][brushColumn] = 0;
         }
       });
@@ -84,11 +86,23 @@ export function createMapEditor(sceneRoot, world, ui) {
       if (!nextFloorValue) {
         state.spawns = repairSpawns(state.spawns, state.floors);
       }
+    } else if (state.mode === 'ice') {
+      const nextIceValue = state.ice[row][column] ? 0 : 1;
+      forEachBrushCell(row, column, (brushRow, brushColumn) => {
+        state.ice[brushRow][brushColumn] = nextIceValue;
+        if (nextIceValue) {
+          state.floors[brushRow][brushColumn] = 1;
+          state.cells[brushRow][brushColumn] = 0;
+        }
+      });
     } else {
       const nextWallValue = state.cells[row][column] ? 0 : 1;
       forEachBrushCell(row, column, (brushRow, brushColumn) => {
         state.cells[brushRow][brushColumn] = nextWallValue;
         state.floors[brushRow][brushColumn] = 1;
+        if (nextWallValue) {
+          state.ice[brushRow][brushColumn] = 0;
+        }
       });
     }
 
@@ -103,6 +117,8 @@ export function createMapEditor(sceneRoot, world, ui) {
       ? 'Spawn painter active. Click a tile to move the player start.'
       : nextMode === 'floor'
         ? 'Floor painter active. Click tiles to add or remove playable floor.'
+        : nextMode === 'ice'
+          ? 'Ice painter active. Cars will slide more on these tiles.'
         : 'Wall painter active. Click tiles to toggle solid cells.';
   }
 
@@ -110,6 +126,7 @@ export function createMapEditor(sceneRoot, world, ui) {
     const nextMap = getDefaultMapTemplate();
     state.arenaVariant = nextMap.arenaVariant;
     state.floors = createCellsFromTiles(nextMap.floors, 1);
+    state.ice = createCellsFromTiles(nextMap.ice);
     state.cells = createCellsFromWalls(nextMap.walls);
     state.spawns = nextMap.spawns;
     state.selectedSpawnIndex = 0;
@@ -134,6 +151,7 @@ export function createMapEditor(sceneRoot, world, ui) {
     state.activeSlot = normalizedSlot;
     state.arenaVariant = loadedMap.arenaVariant;
     state.floors = createCellsFromTiles(loadedMap.floors, 1);
+    state.ice = createCellsFromTiles(loadedMap.ice);
     state.cells = createCellsFromWalls(loadedMap.walls);
     state.spawns = loadedMap.spawns;
     state.selectedSpawnIndex = 0;
@@ -159,11 +177,13 @@ export function createMapEditor(sceneRoot, world, ui) {
       const row = Number(cell.dataset.row);
       const column = Number(cell.dataset.column);
       const hasFloor = state.floors[row][column] === 1;
+      const hasIce = state.ice[row][column] === 1;
       const isWall = state.cells[row][column] === 1;
       const spawnIndex = state.spawns.findIndex((spawn) => spawn.x === column && spawn.y === row);
       const isSpawn = spawnIndex >= 0;
       cell.classList.toggle('editor-cell--void', !hasFloor);
       cell.classList.toggle('editor-cell--floor', hasFloor);
+      cell.classList.toggle('editor-cell--ice', hasIce);
       cell.classList.toggle('editor-cell--wall', isWall);
       cell.classList.toggle('editor-cell--spawn', isSpawn);
       cell.dataset.spawnIndex = isSpawn ? String(spawnIndex + 1) : '';
@@ -171,7 +191,10 @@ export function createMapEditor(sceneRoot, world, ui) {
     }
 
     ui.roomLabel.textContent = `Map mode: ${GRID_SIZE} x ${GRID_SIZE}`;
-    ui.peerCountLabel.textContent = `Slot ${state.activeSlot} | ${state.arenaVariant} | ${state.spawns.length} spawn${state.spawns.length === 1 ? '' : 's'} | ${countTiles(state.floors)} floor tile${countTiles(state.floors) === 1 ? '' : 's'} | ${countWalls(state.cells)} wall tile${countWalls(state.cells) === 1 ? '' : 's'}`;
+    const floorCount = countTiles(state.floors);
+    const iceCount = countTiles(state.ice);
+    const wallCount = countWalls(state.cells);
+    ui.peerCountLabel.textContent = `Slot ${state.activeSlot} | ${state.arenaVariant} | ${state.spawns.length} spawn${state.spawns.length === 1 ? '' : 's'} | ${floorCount} floor tile${floorCount === 1 ? '' : 's'} | ${iceCount} ice tile${iceCount === 1 ? '' : 's'} | ${wallCount} wall tile${wallCount === 1 ? '' : 's'}`;
     sceneRoot.dataset.arenaVariant = state.arenaVariant;
 
     renderSlotState(ui, state.activeSlot);
@@ -222,6 +245,7 @@ function configureHud(ui, state, exportMap, clearMap, setMode, saveToSlot, loadS
   toolbar.className = 'editor-toolbar';
   toolbar.innerHTML = `
     <button type="button" data-editor-mode="floor">Floor</button>
+    <button type="button" data-editor-mode="ice">Ice</button>
     <button type="button" data-editor-mode="wall">Wall</button>
     <button type="button" data-editor-mode="spawn">Spawn</button>
   `;
@@ -330,7 +354,7 @@ function renderSlotMetadata(ui, summaries) {
   }
 
   metadata.innerHTML = summaries.map((summary) => `
-    <span>Slot ${summary.slot}: ${summary.arenaVariant}, ${summary.floorCount} floor, ${summary.wallCount} walls</span>
+    <span>Slot ${summary.slot}: ${summary.arenaVariant}, ${summary.floorCount} floor, ${summary.iceCount ?? 0} ice, ${summary.wallCount} walls</span>
   `).join('');
 }
 
@@ -361,6 +385,7 @@ function buildMapPayload(state) {
     arenaVariant: state.arenaVariant,
     spawns: state.spawns.map((spawn, index) => getMapSpawn({ spawns: state.spawns }, index)),
     floors: state.floors.flatMap((row, y) => row.flatMap((cell, x) => (cell ? [{ x, y }] : []))),
+    ice: state.ice.flatMap((row, y) => row.flatMap((cell, x) => (cell ? [{ x, y }] : []))),
     walls: state.cells.flatMap((row, y) => row.flatMap((cell, x) => (cell ? [{ x, y }] : []))),
   };
 }

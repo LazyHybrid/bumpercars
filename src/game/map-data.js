@@ -26,6 +26,7 @@ export function createDefaultMap(arenaVariant = 'classic') {
     arenaVariant,
     spawns: createDefaultSpawns(arenaVariant),
     floors: createCircularDefaultFloors(arenaVariant),
+    ice: [],
     walls: [],
   };
 }
@@ -124,6 +125,7 @@ export function getMapSlotSummaries() {
     slot: index + 1,
     arenaVariant: normalizeMap(map).arenaVariant,
     floorCount: Array.isArray(map.floors) ? map.floors.length : 0,
+    iceCount: Array.isArray(map.ice) ? map.ice.length : 0,
     wallCount: Array.isArray(map.walls) ? map.walls.length : 0,
   }));
 }
@@ -139,6 +141,11 @@ export function normalizeMap(map) {
       .map((floor) => normalizeWall(floor, sourceGridSize, base.gridSize, gridOffset))
       .filter(Boolean)
     : base.floors;
+  const ice = Array.isArray(map?.ice)
+    ? map.ice
+      .map((tile) => normalizeWall(tile, sourceGridSize, base.gridSize, gridOffset))
+      .filter(Boolean)
+    : base.ice;
   const walls = Array.isArray(map?.walls)
     ? map.walls
       .map((wall) => normalizeWall(wall, sourceGridSize, base.gridSize, gridOffset))
@@ -150,6 +157,7 @@ export function normalizeMap(map) {
     arenaVariant,
     spawns,
     floors,
+    ice,
     walls,
   };
 }
