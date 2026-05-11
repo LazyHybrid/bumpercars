@@ -62,6 +62,16 @@ export function createWorld(root) {
       floorElement.style.transform = `translate3d(${rect.minX * WORLD_SCALE}px, ${rect.minY * WORLD_SCALE}px, 0)`;
       mapLayer.append(floorElement);
     }
+    
+      for (const iceTile of map.ice ?? []) {
+        const rect = mapWallToWorldRect(iceTile);
+        const iceElement = document.createElement('div');
+        iceElement.className = 'arena-ice-tile';
+        iceElement.style.width = `${Math.ceil(MAP_CELL_SIZE * WORLD_SCALE) + 1}px`;
+        iceElement.style.height = `${Math.ceil(MAP_CELL_SIZE * WORLD_SCALE) + 1}px`;
+        iceElement.style.transform = `translate3d(${rect.minX * WORLD_SCALE}px, ${rect.minY * WORLD_SCALE}px, 0)`;
+        mapLayer.append(iceElement);
+      }
 
     for (const wall of map.walls) {
       const rect = mapWallToWorldRect(wall);

@@ -1,3 +1,58 @@
+// Imports
+import './style.css';
+import './scene-actor-layer.css';
+import { joinRoom, selfId } from '@trystero-p2p/nostr';
+import {
+  ABILITY_DEFINITIONS,
+  ABILITY_IDS,
+  applyPlayerAbilitiesSnapshot,
+  resetPlayerAbilities,
+  serializePlayerAbilities,
+  updatePlayerAbilityInput,
+} from './game/abilities';
+import { syncCooldownIndicator } from './game/cooldowns';
+import {
+  applyHeldAbilitiesSnapshot,
+  applyPowerupEffect,
+  collectPendingBombDrops,
+  reconcileSyncedBombVisualTiming,
+  renderBombEffects,
+  resetHeldAbilities,
+  serializeHeldAbilities,
+  updateBombsState,
+} from './game/powerups/effects';
+import {
+  INPUT_SEND_INTERVAL_MS,
+  LOCAL_RECONCILE_RATE,
+  MAX_PLAYERS,
+  PUBLIC_ORIGIN,
+  RELAY_URLS,
+  REMOTE_INTERPOLATION_RATE,
+  REMOTE_TIMEOUT_MS,
+  ROOM_APP_ID,
+  SIMULATION_STEP,
+  SNAPSHOT_POSITION_SNAP_DISTANCE,
+  SNAPSHOT_SEND_INTERVAL_MS,
+  SNAPSHOT_VELOCITY_SNAP_DELTA,
+  TURN_CREDENTIAL,
+  TURN_URLS,
+  TURN_USERNAME
+} from './game/config';
+import { createInputState, normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
+import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getActiveMapSlot, getMapSlot, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
+import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
+import { LifeSystem, isOnFloorOrWall } from './game/life.js';
+import { createMapEditor } from './game/map-editor';
+import { Vec2 } from './game/math';
+import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
+import { createWorld } from './game/scene';
+import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playBombDropSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
+import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
+import { createLobbyController } from './lobby/lobby-controller';
+import { createLobbyUI } from './ui/lobby-ui';
+import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
+import { renderUI } from './ui/state-renderer.js';
+
 // --- Power-up pickup logic ---
 // Simple circle collision for pickup
 function isPlayerOnPowerup(player, powerup) {
@@ -125,68 +180,8 @@ function hostResetPowerups() {
   powerupTimers = [];
   powerupSpawnAccumulator = 0;
 }
-// =========================
-// Imports
-// =========================
-import './style.css';
-import './scene-actor-layer.css';
-import { joinRoom, selfId } from '@trystero-p2p/nostr';
-import {
-  ABILITY_DEFINITIONS,
-  ABILITY_IDS,
-  applyPlayerAbilitiesSnapshot,
-  resetPlayerAbilities,
-  serializePlayerAbilities,
-  updatePlayerAbilityInput,
-} from './game/abilities';
-import { syncCooldownIndicator } from './game/cooldowns';
-import {
-  applyHeldAbilitiesSnapshot,
-  applyPowerupEffect,
-  collectPendingBombDrops,
-  reconcileSyncedBombVisualTiming,
-  renderBombEffects,
-  resetHeldAbilities,
-  serializeHeldAbilities,
-  updateBombsState,
-} from './game/powerups/effects';
-import {
-  INPUT_SEND_INTERVAL_MS,
-  LOCAL_RECONCILE_RATE,
-  MAX_PLAYERS,
-  PUBLIC_ORIGIN,
-  RELAY_URLS,
-  REMOTE_INTERPOLATION_RATE,
-  REMOTE_TIMEOUT_MS,
-  ROOM_APP_ID,
-  SIMULATION_STEP,
-  SNAPSHOT_POSITION_SNAP_DISTANCE,
-  SNAPSHOT_SEND_INTERVAL_MS,
-  SNAPSHOT_VELOCITY_SNAP_DELTA,
-  TURN_CREDENTIAL,
-  TURN_URLS,
-  TURN_USERNAME
-} from './game/config';
-import { createInputState, normalizeInput, readCurrentInputState, serializeInput, setupInput } from './game/input';
-import { MAP_WORLD_SIZE, MAP_CELL_SIZE, WORLD_SCALE, getActiveMap, getActiveMapSlot, getMapSlot, getMapSpawn, mapCellToWorld, setSessionMap } from './game/map-data';
-import { ensureRemotePlayer, colorFromId, createPlayer, syncPlayerTransform } from './game/players';
-import { LifeSystem, isOnFloorOrWall } from './game/life.js';
-import { createMapEditor } from './game/map-editor';
-import { Vec2 } from './game/math';
-import { resolveArenaCollision, resolveMapWallCollisions, resolvePlayerCollision, simulateMovement } from './game/physics';
-import { createWorld } from './game/scene';
-import { initAudio, updateEngineSound, playCollectSound, playCollisionSound, playDamageSound, playDespawnSound, playSpeedBoostSound, playBombDropSound, playExplosionSound, startShieldSound, stopShieldSound, startGhostSound, stopGhostSound } from './game/audio/sound-manager';
-import { isLocalOrPrivateHost, lerpAngle, shortId } from './game/utils';
-import { createLobbyController } from './lobby/lobby-controller';
-import { createLobbyUI } from './ui/lobby-ui';
-import { submitName, validatePlayerName, updateNameValidation, initNameUI } from './lobby/lobby-helpers';
-import { renderUI } from './ui/state-renderer.js';
 
-
-// =========================
 // DOM/UI References
-// =========================
-// ...existing code...
 const playHud = document.getElementById('play-hud');
 const editorHud = document.getElementById('editor-hud');
 const eyebrowLabel = playHud.querySelector('.eyebrow');
@@ -344,7 +339,6 @@ initPauseMenu();
 
 
 const sceneRoot = document.querySelector('#scene');
-// ...existing code...
 
 // Create HP bar as a direct child of body for maximum overlay visibility
 let hpBarContainer = document.getElementById('hp-bar-container');
@@ -1188,13 +1182,14 @@ function setAbilitySlot(slot, iconEl, badgeEl, heldAbility) {
     } else if (heldAbility.type === 'ghost') {
       iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3c-4.1 0-7 3-7 7.2V21l3-2.1L12 21l4-2.1 3 2.1V10.2C19 6 16.1 3 12 3zm3.8 12.2c-.7 0-1.3-.6-1.3-1.3s.6-1.3 1.3-1.3 1.3.6 1.3 1.3-.6 1.3-1.3 1.3zm-7.6 0c-.7 0-1.3-.6-1.3-1.3s.6-1.3 1.3-1.3 1.3.6 1.3 1.3-.6 1.3-1.3 1.3zm1 2.5c.8-.9 1.7-1.3 2.8-1.3s2 .4 2.8 1.3l.7-.6c-.9-1.2-2.1-1.8-3.5-1.8s-2.6.6-3.5 1.8l.7.6z"/></svg>';
       slot.dataset.ability = 'ghost';
+    } else if (heldAbility.type === 'icebomb') {
+      iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="13.5" r="6.5" fill="currentColor"/><path d="M10.5 6.8 13 4.3l2.7 2.7-2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 3.2v2.2M17.4 4.3h2.2M17.9 3.7l1.2 1.2M17.9 4.9l1.2-1.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M6.8 11.2h7.6M6.8 13.6h7.6M6.8 16h7.6" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="0.9" stroke-linecap="round"/></svg>';
+      slot.dataset.ability = 'icebomb';
     } else if (heldAbility.type === 'bomb') {
       iconEl.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="13.5" r="6.5" fill="currentColor"/><path d="M10.5 6.8 13 4.3l2.7 2.7-2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.9 3.5h1.2M17.5 2.9v1.2M16.2 2.2l.8.8M16.2 4.8l.8-.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8.6" cy="11.4" r="1.2" fill="rgba(255,255,255,0.35)"/></svg>';
       slot.dataset.ability = 'bomb';
     } else {
-      iconEl.textContent = heldAbility.type === 'rocket'
-        ? 'R'
-        : '?';
+      iconEl.textContent = '?';
       slot.dataset.ability = heldAbility.type;
     }
     if (heldAbility.charges > 1) {

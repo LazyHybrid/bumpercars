@@ -3,7 +3,7 @@
 
 export const POWERUP_NAMES = [
   'shield',
-  'rocket',
+  'icebomb',
   'ghost',
   'bomb',
 ];

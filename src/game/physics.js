@@ -19,22 +19,33 @@ import {
   isShieldActive,
 } from './powerups/effects';
 import { clamp, lerp, Vec2 } from './math';
-import { getActiveMap, mapWallToWorldRect } from './map-data';
+import {
+  MAP_CELL_SIZE,
+  MAP_WORLD_SIZE,
+  getActiveMap,
+  mapWallToWorldRect,
+} from './map-data';
 
 const inversePlayerMass = 1 / PLAYER_MASS;
 const wallContactThreshold = 0.18;
 const wallTouchPush = 5.5;
 const wallPenetrationPush = 18;
+const ICE_TURN_RATE_SCALE = 0.42;
+const ICE_SPEED_RAMP_DECAY_SCALE = 0.35;
 
 export function simulateMovement(player, input, delta, now = performance.now() / 1000) {
-  const traction = 0.82;
-  const lateralGrip = 4.8;
-  const strafeGrip = 1.2;
+  const activeMap = getActiveMap();
+  const onIce = isPlayerOnIceTile(player, activeMap);
+  const traction = onIce ? 0.975 : 0.82;
+  const lateralGrip = onIce ? 0.95 : 4.8;
+  const strafeGrip = onIce ? 0.3 : 1.2;
+  const impactVelocityDecay = onIce ? 0.45 : IMPACT_VELOCITY_DECAY;
   player.previousPosition.copy(player.position);
   const throttlePressed = input.forward || input.backward;
+  const rampDecayScale = onIce ? ICE_SPEED_RAMP_DECAY_SCALE : 1;
   player.speedRamp = throttlePressed
     ? Math.min(1, player.speedRamp + delta / SPEED_RAMP_TIME_SECONDS)
-    : Math.max(0, player.speedRamp - delta / (SPEED_RAMP_TIME_SECONDS * 0.5));
+    : Math.max(0, player.speedRamp - (delta * rampDecayScale) / (SPEED_RAMP_TIME_SECONDS * 0.5));
 
   const baseSpeedScale = lerp(BASE_SPEED_SCALE, BOOSTED_SPEED_SCALE, player.speedRamp);
   const speedScale = getSpeedBoostScale(player, baseSpeedScale, now);
@@ -42,7 +53,7 @@ export function simulateMovement(player, input, delta, now = performance.now() /
   const speed = player.velocity.length();
   const steerInput = (input.left ? 1 : 0) - (input.right ? 1 : 0);
   const strafeInput = (input.strafeRight ? 1 : 0) - (input.strafeLeft ? 1 : 0);
-  const steerStrength = lerp(1.7, 2.8, Math.min(speed / 14, 1));
+  const steerStrength = lerp(1.7, 2.8, Math.min(speed / 14, 1)) * (onIce ? ICE_TURN_RATE_SCALE : 1);
 
   player.heading -= steerInput * steerStrength * delta * (speed > 0.2 ? 1 : 0.45);
 
@@ -59,7 +70,7 @@ export function simulateMovement(player, input, delta, now = performance.now() /
   player.velocity.addScaledVector(lateral, -Math.min(1, appliedLateralGrip * delta));
   player.velocity.multiplyScalar(1 - (1 - traction) * delta * 8);
   player.velocity.clampLength(0, 19 * speedScale);
-  player.impactVelocity.multiplyScalar(Math.max(0, 1 - IMPACT_VELOCITY_DECAY * delta));
+  player.impactVelocity.multiplyScalar(Math.max(0, 1 - impactVelocityDecay * delta));
 
   const totalVelocity = player.velocity.clone().add(player.impactVelocity);
   player.position.addScaledVector(totalVelocity, delta);
@@ -226,4 +237,10 @@ function resolveStaticRectCollision(player, rect) {
     + Math.max(0, -totalVelocityAlongWall) * WALL_BOUNCE;
 
   player.impactVelocity.addScaledVector(normal, inwardPush);
+}
+
+function isPlayerOnIceTile(player, map) {
+  const cellX = Math.floor((player.position.x + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
+  const cellY = Math.floor((player.position.y + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
+  return (map.ice ?? []).some((tile) => tile.x === cellX && tile.y === cellY);
 }
