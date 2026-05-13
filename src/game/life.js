@@ -37,6 +37,7 @@ export function isOnFloorOrWall(player, map) {
   const cellY = Math.floor((player.position.y + map.MAP_WORLD_SIZE / 2) / map.MAP_CELL_SIZE);
   // Check if on a floor or wall tile
   const onFloor = map.floors.some(tile => tile.x === cellX && tile.y === cellY);
+  const onIce = (map.ice ?? []).some(tile => tile.x === cellX && tile.y === cellY);
   const onWall = map.walls.some(tile => tile.x === cellX && tile.y === cellY);
-  return onFloor || onWall;
+  return onFloor || onIce || onWall;
 }

@@ -4,6 +4,7 @@
 import {
   BASE_SPEED_SCALE,
   BOOSTED_SPEED_SCALE,
+  GHOST_DURATION_SECONDS,
   SHIELD_CHARGES_ON_PICKUP,
   SHIELD_DURATION_SECONDS,
   SPEED_BOOST_COOLDOWN_SECONDS,
@@ -78,6 +79,14 @@ function ensureShieldState(player) {
   }
 
   return player.shield;
+}
+
+function ensureGhostState(player) {
+  if (!player.ghost) {
+    player.ghost = { activeUntil: 0 };
+  }
+
+  return player.ghost;
 }
 
 function getBaseMovementSpeedScale(player) {
@@ -186,6 +195,16 @@ export function isShieldActive(player, now) {
   return now < (player.shield?.activeUntil ?? 0);
 }
 
+export function activateGhost(player, now) {
+  const ghostState = ensureGhostState(player);
+  ghostState.activeUntil = now + GHOST_DURATION_SECONDS;
+  return true;
+}
+
+export function isGhostActive(player, now) {
+  return now < (player.ghost?.activeUntil ?? 0);
+}
+
 export function getShieldKnockbackScale(targetShielded, sourceShielded) {
   if (targetShielded) {
     return 0;
@@ -206,18 +225,27 @@ export function bomb(player) {
   return pickupHeldAbility(player, 'bomb');
 }
 
-export function activateBomb(player, now) {
+export function icebomb(player) {
+  return pickupHeldAbility(player, 'icebomb');
+}
+
+export function activateBomb(player, now, bombType = 'bomb') {
   const backwardX = -Math.sin(player.heading);
   const backwardY = Math.cos(player.heading);
 
   player.pendingBombDrop = {
     x: player.position.x + backwardX * BOMB_DROP_OFFSET,
     y: player.position.y + backwardY * BOMB_DROP_OFFSET,
+    bombType,
     placedAt: now,
     detonateAt: now + BOMB_FUSE_SECONDS,
   };
 
   return true;
+}
+
+export function activateIceBomb(player, now) {
+  return activateBomb(player, now, 'icebomb');
 }
 
 export function consumePendingBombDrop(player, now = performance.now() / 1000) {
@@ -231,6 +259,7 @@ export function consumePendingBombDrop(player, now = performance.now() / 1000) {
   return {
     id: `${player.id}-${Math.round(now * 1000)}-${Math.random().toString(36).slice(2, 8)}`,
     ownerId: player.id,
+    type: pending.bombType === 'icebomb' ? 'icebomb' : 'bomb',
     x: pending.x,
     y: pending.y,
     placedAt: pending.placedAt,
@@ -256,7 +285,9 @@ export function collectPendingBombDrops(players, now = performance.now() / 1000)
 export function detonateBomb(bomb, players, map, now = performance.now() / 1000) {
   const centerCellX = Math.floor((bomb.x + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
   const centerCellY = Math.floor((bomb.y + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
-  const nextMap = destroyBombTiles(map, bomb);
+  const nextMap = bomb.type === 'icebomb'
+    ? freezeBombTiles(map, bomb)
+    : destroyBombTiles(map, bomb);
 
   for (const player of players) {
     if (isShieldActive(player, now)) {
@@ -399,10 +430,11 @@ export function renderBombEffects({
     const left = `calc(50% + ${bomb.x * worldScale}px)`;
     const top = `calc(50% + ${bomb.y * worldScale}px)`;
     const visual = getBombVisualState(bomb, now);
+    const bombType = bomb.type === 'icebomb' ? 'icebomb' : 'bomb';
 
     if (visual.kind === 'explosion') {
       const explosion = document.createElement('div');
-      explosion.className = 'bomb-explosion';
+      explosion.className = `bomb-explosion bomb-explosion--${bombType}`;
       explosion.style.left = left;
       explosion.style.top = top;
       explosion.style.width = `${MAP_CELL_SIZE * worldScale * visual.diameterCells}px`;
@@ -417,7 +449,7 @@ export function renderBombEffects({
 
     const bombSize = MAP_CELL_SIZE * worldScale * 0.42;
     const bombEl = document.createElement('div');
-    bombEl.className = 'bomb-entity';
+  bombEl.className = `bomb-entity bomb-entity--${bombType}`;
     bombEl.style.left = left;
     bombEl.style.top = top;
     bombEl.style.width = `${bombSize}px`;
@@ -447,7 +479,51 @@ function destroyBombTiles(map, bomb) {
   return {
     ...map,
     floors: map.floors.filter((tile) => !destroyed.has(`${tile.x},${tile.y}`)),
+    ice: (map.ice ?? []).filter((tile) => !destroyed.has(`${tile.x},${tile.y}`)),
     walls: map.walls.filter((tile) => !destroyed.has(`${tile.x},${tile.y}`)),
+  };
+}
+
+function freezeBombTiles(map, bomb) {
+  const centerCellX = Math.floor((bomb.x + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
+  const centerCellY = Math.floor((bomb.y + MAP_WORLD_SIZE / 2) / MAP_CELL_SIZE);
+  const frozen = new Set();
+
+  for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+      frozen.add(`${centerCellX + offsetX},${centerCellY + offsetY}`);
+    }
+  }
+
+  const nextFloors = [...map.floors];
+  const floorKeys = new Set(nextFloors.map((tile) => `${tile.x},${tile.y}`));
+  const nextIce = [...(map.ice ?? [])];
+  const iceKeys = new Set(nextIce.map((tile) => `${tile.x},${tile.y}`));
+
+  for (const key of frozen) {
+    const [xText, yText] = key.split(',');
+    const x = Number(xText);
+    const y = Number(yText);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      continue;
+    }
+
+    if (!floorKeys.has(key)) {
+      nextFloors.push({ x, y });
+      floorKeys.add(key);
+    }
+
+    if (!iceKeys.has(key)) {
+      nextIce.push({ x, y });
+      iceKeys.add(key);
+    }
+  }
+
+  return {
+    ...map,
+    floors: nextFloors,
+    ice: nextIce,
+    walls: map.walls.filter((tile) => !frozen.has(`${tile.x},${tile.y}`)),
   };
 }
 
@@ -461,6 +537,10 @@ export function activateHeldAbilitySlot(player, slotIndex, now = performance.now
   let activated = false;
   if (entry.type === 'shield') {
     activated = activateShield(player, now);
+  } else if (entry.type === 'ghost') {
+    activated = activateGhost(player, now);
+  } else if (entry.type === 'icebomb') {
+    activated = activateIceBomb(player, now);
   } else if (entry.type === 'bomb') {
     activated = activateBomb(player, now);
   }
@@ -479,7 +559,8 @@ export function activateHeldAbilitySlot(player, slotIndex, now = performance.now
 
 export function applyPowerupEffect(type, player, now = performance.now() / 1000) {
   if (type === 'shield') return shield(player, now);
-  if (type === 'rocket') return rocket(player, now);
+  if (type === 'rocket') return icebomb(player, now);
+  if (type === 'icebomb') return icebomb(player, now);
   if (type === 'ghost') return ghost(player, now);
   if (type === 'bomb') return bomb(player, now);
   return false;
